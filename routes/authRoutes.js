@@ -8,7 +8,7 @@ const nodemailer=require('nodemailer');
 const transporter=nodemailer.createTransport({
     service:'gmail',auth:{
         user:'202227086@std.sci.cu.edu.eg',
-        pass:'bmieanwzhhftdwfw'
+        pass:process.env.Email_PASS
     }
 })
 
