@@ -5,6 +5,7 @@ const bcrypt=require('bcryptjs');
 const jwt=require('jsonwebtoken');
 const nodemailer=require('nodemailer');
 
+const {checkToken}=require('../middleware/authMiddleware')
 const transporter=nodemailer.createTransport({
     service:'gmail',auth:{
         user:'202227086@std.sci.cu.edu.eg',
@@ -75,10 +76,18 @@ router.post('/login',async(req,res)=>{
         const isMatch=await bcrypt.compare(password,user.password);
         if(!isMatch)
             return res.status(400).json({msg:"Wrong password"});
-        const token=jwt.sign({id:user._id},'secret123',{expiresIn:'1d'});
+        const token=jwt.sign({id:user._id},process.env.JWT_SECRET,{expiresIn:'1d'});
         res.json({token,user:{name:user.fullName,email:user.email}});
     }catch(err){
         res.status(500).json({error:"Login failed"})
     }
 });
+router.get('/profile',checkToken,async(req,res)=>{
+    try{
+        res.json(req.user);
+    }
+    catch(error){
+        res.status(500).send('Server Error')
+    }
+})
 module.exports=router;
