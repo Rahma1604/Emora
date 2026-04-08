@@ -8,14 +8,17 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'Emora_Children_Drawings', 
-    allowed_formats: ['jpg', 'png', 'jpeg']
-  },
-});
+const createStorage = (folderName) => {
+  return new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+      folder: folderName, 
+      allowed_formats: ['jpg', 'png', 'jpeg']
+    },
+  });
+};
 
-const upload = multer({ storage: storage });
+const uploadProfile = multer({ storage: createStorage('Emora_Profiles') });
+const uploadDrawings = multer({ storage: createStorage('Emora_Children_Drawings') });
 
-module.exports = { cloudinary, upload };
+module.exports = { cloudinary, uploadProfile, uploadDrawings };

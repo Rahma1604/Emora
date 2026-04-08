@@ -6,6 +6,7 @@ const UserSchema=new mongoose.Schema({
     role:{type:String,enum:['parent','doctor'],default:'parent'},
     isVerified:{type:Boolean,default:false},
     verificationCode:String,
-    createdAt:{type:Date,default:Date.now}
+    createdAt:{type:Date,default:Date.now},
+    profilePic: { type: String, default: "" }
 });
 module.exports=mongoose.model('User',UserSchema);

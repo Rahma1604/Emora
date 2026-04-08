@@ -4,7 +4,7 @@ const User=require('../models/User');
 const bcrypt=require('bcryptjs');
 const jwt=require('jsonwebtoken');
 const nodemailer=require('nodemailer');
-
+const { uploadProfile } = require('../config/cloudinary');
 const {checkToken}=require('../middleware/authMiddleware')
 const transporter=nodemailer.createTransport({
     service:'gmail',auth:{
@@ -17,6 +17,10 @@ router.post('/register',async(req,res)=>{
     try{
        const{fullName,email,password,confirmPassword,role}=req.body;
        const cleanEmail=email.trim().toLowerCase();
+       const existingUser = await User.findOne({ email: cleanEmail });
+        if (existingUser) {
+            return res.status(400).json({ msg: "Email already exists! Please use another email or login." });
+        }
        const emailReal=/^[a-zA-Z0-9._%+-]+@(gmail|yahoo|icloud)\.com$/;
        if(!emailReal.test(cleanEmail)){
         return res.status(400).json({msg:"please use right email"})
@@ -90,4 +94,45 @@ router.get('/profile',checkToken,async(req,res)=>{
         res.status(500).send('Server Error')
     }
 })
+router.put('/update-profile',checkToken,uploadProfile.single('profilePic'),async(req,res)=>{
+    try{
+        const {fullName}=req.body;
+        const updates={};
+        if(fullName) updates.fullName=fullName;
+        if(req.file) updates.profilePic=req.file.path;
+        const updatedUser=await User.findByIdAndUpdate(req.user._id,{$set:updates},{new:true}).select('-password');
+       res.json({ msg: "Profile updated successfully", user: updatedUser });
+    } catch (err) {
+        console.log("Error Detail:", err);
+        res.status(500).json({ error: err.message || err});
+    }
+});
+router.post('/resend-code', async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ msg: "Please provide an email" });
+        const user = await User.findOne({ email: email.trim().toLowerCase() });
+        if (!user) { 
+            return res.status(404).json({ msg: "User not found with this email" });
+        }
+        if (user.isVerified) {
+            return res.status(400).json({ msg: "Your account is already verified. Please login." });
+        }
+        const vCode = Math.floor(1000 + Math.random() * 9000).toString();
+        user.verificationCode = vCode;
+        await user.save();
+        const mailOptions = {
+            from: '"Emora App"<202227086@std.sci.cu.edu.eg>',
+            to: user.email,
+            subject: 'New Verification Code - Emora App',
+            text: `Your new verification code is: ${vCode}`
+        };
+        await transporter.sendMail(mailOptions);
+
+        res.status(200).json({ msg: "A new code has been sent to your email" });
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 module.exports=router;
