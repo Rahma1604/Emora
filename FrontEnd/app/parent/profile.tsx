@@ -7,6 +7,8 @@ import {
   StyleSheet,
   Switch,
   ScrollView,
+  Modal,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -15,6 +17,12 @@ import { router } from "expo-router";
 
 export default function ProfileScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
+  const [languageModalVisible, setLanguageModalVisible] = React.useState(false);
+  const [selectedLanguage, setSelectedLanguage] = React.useState("Arabic");
+
+  const handleSelectLanguage = (language: string) => {
+    setSelectedLanguage(language);
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -23,7 +31,6 @@ export default function ProfileScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          {/* Profile Header */}
           <View style={styles.profileSection}>
             <View style={styles.avatarWrapper}>
               <Image
@@ -51,7 +58,6 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Account Settings */}
           <Text style={styles.sectionTitle}>Account Settings</Text>
 
           <View style={styles.card}>
@@ -84,7 +90,10 @@ export default function ProfileScreen() {
 
             <View style={styles.divider} />
 
-            <TouchableOpacity style={styles.row}>
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => setLanguageModalVisible(true)}
+            >
               <View style={styles.rowLeft}>
                 <Feather name="globe" size={20} color="#444" />
                 <Text style={styles.rowText}>Language</Text>
@@ -94,7 +103,10 @@ export default function ProfileScreen() {
 
             <View style={styles.divider} />
 
-            <TouchableOpacity style={styles.row}>
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => router.push("/terms-policies")}
+            >
               <View style={styles.rowLeft}>
                 <MaterialCommunityIcons
                   name="file-document-outline"
@@ -107,11 +119,13 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Support */}
           <Text style={styles.sectionTitle}>Support</Text>
 
           <View style={styles.card}>
-            <TouchableOpacity style={styles.row}>
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => router.push("/contact-support")}
+            >
               <View style={styles.rowLeft}>
                 <Feather name="headphones" size={20} color="#444" />
                 <Text style={styles.rowText}>Contact Support</Text>
@@ -121,7 +135,10 @@ export default function ProfileScreen() {
 
             <View style={styles.divider} />
 
-            <TouchableOpacity style={styles.row}>
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => router.push("/AboutUs")}
+            >
               <View style={styles.rowLeft}>
                 <Feather name="info" size={20} color="#444" />
                 <Text style={styles.rowText}>About Us</Text>
@@ -130,7 +147,6 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Logout */}
           <TouchableOpacity activeOpacity={0.9} style={styles.logoutBtn}>
             <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
@@ -138,7 +154,6 @@ export default function ProfileScreen() {
           <Text style={styles.version}>App Version 2.1.3</Text>
         </ScrollView>
 
-        {/* Bottom Navigation */}
         <View style={styles.bottomNav}>
           <TouchableOpacity
             style={styles.navItem}
@@ -177,6 +192,46 @@ export default function ProfileScreen() {
             <Text style={[styles.navText, styles.activeNavText]}>Profile</Text>
           </TouchableOpacity>
         </View>
+
+        <Modal
+          visible={languageModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setLanguageModalVisible(false)}
+        >
+          <Pressable
+            style={styles.overlay}
+            onPress={() => setLanguageModalVisible(false)}
+          >
+            <Pressable style={styles.bottomSheet}>
+              <Text style={styles.bottomSheetTitle}>Select Language</Text>
+
+              <TouchableOpacity
+                style={styles.languageOption}
+                onPress={() => handleSelectLanguage("Arabic")}
+              >
+                <Text style={styles.languageText}>Arabic</Text>
+                <View style={styles.radioOuter}>
+                  {selectedLanguage === "Arabic" && (
+                    <View style={styles.radioInner} />
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.languageOption}
+                onPress={() => handleSelectLanguage("English")}
+              >
+                <Text style={styles.languageText}>English</Text>
+                <View style={styles.radioOuter}>
+                  {selectedLanguage === "English" && (
+                    <View style={styles.radioInner} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -368,5 +423,63 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 6,
+  },
+
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "flex-end",
+  },
+
+  bottomSheet: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 30,
+  },
+
+  bottomSheetTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#222",
+    marginBottom: 18,
+  },
+
+  languageOption: {
+    height: 54,
+    borderWidth: 1,
+    borderColor: "#E5E5E5",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#fff",
+  },
+
+  languageText: {
+    fontSize: 14,
+    color: "#222",
+    fontWeight: "400",
+  },
+
+  radioOuter: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: "#BDBDBD",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  radioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#B9D8F6",
   },
 });
