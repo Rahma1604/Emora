@@ -10,6 +10,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
+ import AsyncStorage from "@react-native-async-storage/async-storage";
+
 
 type RoleType = "doctor" | "parent" | null;
 
@@ -23,8 +25,20 @@ export default function RoleSelectionScreen() {
     router.back();
   };
 
- const handleGetStarted = () => {
-  router.push("/auth/register");
+
+const handleGetStarted = async () => {
+  if (!selectedRole) return;
+
+  try {
+    // نخزن نوع المستخدم
+    await AsyncStorage.setItem("role", selectedRole);
+
+    // نروح للـ Register
+    router.push("/auth/register");
+
+  } catch (error) {
+    console.log("Error saving role:", error);
+  }
 };
 
   return (

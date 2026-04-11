@@ -15,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const logoImage = require("../../assets/images/images/emora-logo.png");
 
@@ -61,14 +62,30 @@ export default function LoginScreen() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleLogin = () => {
-    const isValid = validateForm();
+ const handleLogin = async () => {
+  const isValid = validateForm();
 
-    if (!isValid) return;
+  if (!isValid) return;
 
-    // مؤقتًا لحد ما الباك يجهز
-    console.log("Login success");
-  };
+  try {
+    // نجيب role اللي اتخزن من صفحة الاختيار
+    const role = await AsyncStorage.getItem("role");
+
+    console.log("Login success, role:", role);
+
+    if (role === "parent") {
+      router.replace("/parent/parentHome");
+    } else if (role === "doctor") {
+      router.replace("/doctor/home");
+    } else {
+      // fallback لو حصل أي مشكلة
+      router.replace("/auth/login");
+    }
+
+  } catch (error) {
+    console.log("Error getting role:", error);
+  }
+};
 
   const renderInput = ({
     placeholder,

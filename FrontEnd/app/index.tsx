@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet,Image } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { Asset } from "expo-asset";
@@ -7,6 +7,7 @@ import { Asset } from "expo-asset";
 const onboardingImage1 = require("../assets/images/images/onboarding-1.jpg");
 const onboardingImage2 = require("../assets/images/images/onboarding-2.jpg");
 const onboardingImage3 = require("../assets/images/images/onboarding-3.jpg");
+const splashLogo = require("..//assets/images/images/puzzle-logo.png");
 
 export default function SplashScreen() {
   useEffect(() => {
@@ -38,7 +39,7 @@ export default function SplashScreen() {
       style={styles.container}
     >
       <View style={styles.logoContainer}>
-        <Text style={styles.logoText}>EMORA</Text>
+        <Image source={splashLogo} style={styles.logoImage} resizeMode="contain"/>
       </View>
     </LinearGradient>
   );
@@ -60,5 +61,9 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 3,
     color: "#ffffff",
+  },
+  logoImage:{
+    width:300,
+    height:300
   },
 });
