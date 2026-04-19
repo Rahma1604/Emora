@@ -7,6 +7,8 @@ const UserSchema=new mongoose.Schema({
     isVerified:{type:Boolean,default:false},
     verificationCode:String,
     createdAt:{type:Date,default:Date.now},
-    profilePic: { type: String, default: "" }
+    profilePic: { type: String, default: "" },
+    resetPasswordToken: String,
+resetPasswordExpires: Date
 });
 module.exports=mongoose.model('User',UserSchema);

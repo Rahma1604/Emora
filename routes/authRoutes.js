@@ -16,7 +16,7 @@ const transporter=nodemailer.createTransport({
 router.post('/register',async(req,res)=>{
     try{
        const{fullName,email,password,confirmPassword,role}=req.body;
-       const cleanEmail=email.trim().toLowerCase();
+       const cleanEmail=email.trim();
        const existingUser = await User.findOne({ email: cleanEmail });
         if (existingUser) {
             return res.status(400).json({ msg: "Email already exists! Please use another email or login." });
@@ -111,7 +111,7 @@ router.post('/resend-code', async (req, res) => {
     try {
         const { email } = req.body;
         if (!email) return res.status(400).json({ msg: "Please provide an email" });
-        const user = await User.findOne({ email: email.trim().toLowerCase() });
+        const user = await User.findOne({ email: email.trim() });
         if (!user) { 
             return res.status(404).json({ msg: "User not found with this email" });
         }
@@ -131,6 +131,70 @@ router.post('/resend-code', async (req, res) => {
 
         res.status(200).json({ msg: "A new code has been sent to your email" });
 
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+router.post('/forgot-password', async (req, res) => {
+    try {
+        const { email } = req.body;
+        const user = await User.findOne({ email: email.trim()});
+
+        if (!user) return res.status(404).json({ msg: "Email not found" });
+
+        const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+        user.resetPasswordToken = otp;
+        user.resetPasswordExpires = Date.now() + 600000; 
+        await user.save();
+
+        const mailOptions = {
+            from: '"Emora App"<202227086@std.sci.cu.edu.eg>',
+            to: user.email,
+            subject: 'Password Reset Code - Emora App',
+            text: `Your password reset code is: ${otp}. It expires in 10 minutes.`
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        res.status(200).json({ msg: "OTP sent to your email" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/verify-otp', async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+        const user = await User.findOne({ 
+            email, 
+            resetPasswordToken: otp,
+            resetPasswordExpires: { $gt: Date.now() } 
+        });
+
+        if (!user) return res.status(400).json({ msg: "Invalid or expired OTP" });
+
+        res.status(200).json({ msg: "OTP verified successfully" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/reset-password', async (req, res) => {
+    try {
+        const { email, newPassword } = req.body;
+        const user = await User.findOne({ email });
+
+        if (!user) return res.status(404).json({ msg: "User not found" });
+
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(newPassword, salt);
+
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpires = undefined;
+        await user.save();
+
+        res.status(200).json({ msg: "Password reset successfully" });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
