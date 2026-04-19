@@ -33,4 +33,12 @@ router.post('/:childId/drawings',checkToken,uploadDrawings.single('drawing'),asy
         res.status(500).json({error:"Failed to upload drawing"});
     }
 });
+router.get('/all', checkToken, async (req, res) => {
+    try {
+        const children = await Child.find({ parentId: req.user._id });
+        res.status(200).json(children);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch children", message: err.message });
+    }
+});
 module.exports=router;
