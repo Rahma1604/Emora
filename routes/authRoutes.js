@@ -96,10 +96,18 @@ router.get('/profile',checkToken,async(req,res)=>{
 })
 router.put('/update-profile',checkToken,uploadProfile.single('profilePic'),async(req,res)=>{
     try{
-        const {fullName}=req.body;
+        const {fullName,email}=req.body;
         const updates={};
         if(fullName) updates.fullName=fullName;
         if(req.file) updates.profilePic=req.file.path;
+        if(email){
+            const cleanEmail=email.trim();
+            const existingUser=await User.findOne({email:cleanEmail});
+            if(existingUser && existingUser._id.toString()!==req.user._id.toString()){
+                return res.status(400).json({msg:"Email already in use by another account"});
+            }
+            updates.email=cleanEmail;
+        }
         const updatedUser=await User.findByIdAndUpdate(req.user._id,{$set:updates},{new:true}).select('-password');
        res.json({ msg: "Profile updated successfully", user: updatedUser });
     } catch (err) {
