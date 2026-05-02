@@ -1,46 +1,47 @@
 const express=require('express');
 const router=express.Router();
 const Chat=require('../models/Chat');
-const Child = require('../models/Child');
 const {checkToken}=require('../middleware/authMiddleware');
+const { uploadDrawings, uploadVoices } = require('../config/cloudinary');
 
-router.post('/send',checkToken,async(req,res)=>{
+const chatUpload = (req, res, next) => {
+    const type = req.query.type;
+    if (type === 'voice') {
+        return uploadVoices.any()(req, res, next);
+    } else {
+        return uploadDrawings.any()(req, res, next);
+    }
+};
+
+router.post('/send',checkToken,chatUpload,async(req,res)=>{
     try{
-        const {childId,text,attachmentType,attachmentId}=req.body;
+        const {childId,text,attachmentType}=req.body;
         let chat=await Chat.findOne({parentId: req.user._id, childId});
         if(!chat){
-            chat=new Chat({parentId:req.user._id,childId,message:[]});
+            chat=new Chat({parentId:req.user._id,childId,messages:[]});
     }
-    let fileUrl = null;
-        if (attachmentType && attachmentId) {
-            const child = await Child.findById(childId);
-            if (child) {
-                if (attachmentType === 'drawing') {
-                    const drawing = child.drawings.id(attachmentId);
-                    fileUrl = drawing ? drawing.ImageUrl : null;
-                } else if (attachmentType === 'voice') {
-                    const voice = child.voiceNotes.id(attachmentId);
-                    fileUrl = voice ? voice.voiceUrl : null;
-                }
-            }
-        }
-        const parentMsg = {
+
+let fileUrl = (req.files && req.files.length > 0) ? req.files[0].path : null;
+
+const parentMsg = {
             sender: 'parent',
             text: text || "",
             attachment: {
-                type: attachmentType || 'none',
-                dataId: attachmentId || null
-            }
+                type: attachmentType === 'voice' ? 'audio' : (fileUrl ? 'image' : 'none'),
+                fileUrl: fileUrl
+            },
+            createdAt: new Date()
         };
+
         chat.messages.push(parentMsg);
         let aiResponseText = "أنا أحلل رسالتك الآن...";
-        if (attachmentType === 'drawing') aiResponseText = "لقد استلمت الرسمة، أحلل الآن المشاعر والألوان فيها...";
-        if (attachmentType === 'voice') aiResponseText = "أسمع التسجيل الصوتي بتركيز، سأعطيك تحليلي فوراً...";
-chat.messages.push({
-            sender: 'ai',
-            text: aiResponseText
-        });
+        if (fileUrl) {
+            aiResponseText = attachmentType === 'voice' 
+                ? "سمعت الريكورد وجاري تحليله..." 
+                : "وصلتني الرسمة، جاري تحليلها...";
+        }
 
+    chat.messages.push({sender:'ai',text: aiResponseText,createdAt: new Date()});
     await chat.save();
     res.status(200).json({message:"Message sent successfully",chat});
     }catch(err){
@@ -53,9 +54,7 @@ router.delete('/:childId', checkToken, async (req, res) => {
             parentId: req.user._id, 
             childId: req.params.childId 
         });
-
         if (!chat) return res.status(404).json({ msg: "Chat not found" });
-
         res.status(200).json({ msg: "Chat history deleted successfully" });
     } catch (err) {
         res.status(500).json({ error: "Failed to delete chat" });
@@ -67,14 +66,11 @@ router.get('/:childId', checkToken, async (req, res) => {
             parentId: req.user._id, 
             childId: req.params.childId 
         });
-
-        if (!chat) {
-            return res.status(200).json([]); 
-        }
-
+        if (!chat) return res.status(200).json([]); 
         res.status(200).json(chat.messages);
     } catch (err) {
         res.status(500).json({ error: "Failed to fetch chat history" });
     }
 });
+
 module.exports=router;
