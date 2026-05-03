@@ -7,9 +7,18 @@ const doctorChatSchema = new mongoose.Schema({
         text: String,
         attachment: {
             type: { type: String, enum: ['drawing', 'voice', 'none'], default: 'none' },
-            dataId: mongoose.Schema.Types.ObjectId 
+            dataId: {
+                type: mongoose.Schema.Types.ObjectId,
+                refPath: 'messages.attachment.modelType'
+        },
+        modelType: { 
+        type: String, 
+        required: function() { return this.type !== 'none'; },
+        enum: ['Drawing', 'VoiceAnalysis']
+        }
         },
         createdAt: { type: Date, default: Date.now }
     }]
 }, { timestamps: true });
+doctorChatSchema.index({ parentId: 1, doctorId: 1, childId: 1 });
 module.exports = mongoose.model('DoctorChat', doctorChatSchema);

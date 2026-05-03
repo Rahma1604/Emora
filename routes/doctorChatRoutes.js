@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const DoctorChat = require('../models/DoctorChat'); // الموديل الجديد اللي هنعمله
+const DoctorChat = require('../models/DoctorChat');
 const { checkToken } = require('../middleware/authMiddleware');
 
 
 router.post('/send', checkToken, async (req, res) => {
     try {
-        const { doctorId, childId, text, attachmentType, attachmentId, parentId } = req.body;
+        const { doctorId, childId, text, attachmentType, attachmentId, parentId ,modelType} = req.body;
 
        
         const pId = req.user.role === 'parent' ? req.user._id : parentId;
@@ -26,7 +26,8 @@ router.post('/send', checkToken, async (req, res) => {
             text: text || "",
             attachment: {
                 type: attachmentType || 'none', // 'drawing', 'voice', or 'none'
-                dataId: attachmentId || null
+                dataId: attachmentId || null,
+                modelType: modelType || null    
             }
         };
 
@@ -58,7 +59,10 @@ router.get('/:chatId', checkToken, async (req, res) => {
     try {
         const chat = await DoctorChat.findById(req.params.chatId)
             .populate('messages.senderId', 'fullName role')
-            .populate('childId', 'name');
+            .populate('childId', 'name')
+.populate({
+                path: 'messages.attachment.dataId'
+            });
 
         if (!chat) return res.status(404).json({ msg: "Chat not found" });
 
