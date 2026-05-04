@@ -20,7 +20,12 @@ import API from "../api";
 const logoImage = require("../../assets/images/images/emora-logo.png");
 
 export default function OtpScreen() {
-  const { email } = useLocalSearchParams<{ email?: string }>();
+  const { email, mode } = useLocalSearchParams<{
+    email?: string;
+    mode?: string;
+  }>();
+
+  const isForgotPassword = mode === "forgot-password";
 
   const [otp, setOtp] = useState(["", "", "", ""]);
   const [error, setError] = useState("");
@@ -73,22 +78,46 @@ export default function OtpScreen() {
     }
 
     if (!email) {
-      setError("Email is missing. Please register again.");
+      setError("Email is missing. Please try again.");
       return;
     }
+
+    const cleanEmail = String(email).trim().toLowerCase();
 
     setError("");
     setIsLoading(true);
 
     try {
-      await API.post("/auth/verify", {
-        email: String(email).trim().toLowerCase(),
-        code,
-      });
+      if (isForgotPassword) {
+        await API.post("/auth/verify-otp", {
+          email: cleanEmail,
+          otp: code,
+        });
 
-      router.replace("/auth/login");
+        router.push({
+          pathname: "/auth/reset-password",
+          params: {
+            email: cleanEmail,
+          },
+        });
+      } else {
+        await API.post("/auth/verify", {
+          email: cleanEmail,
+          code,
+        });
+
+        router.replace("/auth/login");
+      }
     } catch (error) {
       if (axios.isAxiosError(error)) {
+        console.log("FULL OTP ERROR:", {
+          message: error.message,
+          status: error.response?.status,
+          data: error.response?.data,
+          url: error.config?.url,
+          baseURL: error.config?.baseURL,
+        });
+
         const message =
           error.response?.data?.msg ||
           error.response?.data?.message ||
@@ -108,16 +137,24 @@ export default function OtpScreen() {
     if (secondsLeft > 0) return;
 
     if (!email) {
-      setError("Email is missing. Please register again.");
+      setError("Email is missing. Please try again.");
       return;
     }
+
+    const cleanEmail = String(email).trim().toLowerCase();
 
     setIsLoading(true);
 
     try {
-      await API.post("/auth/resend-code", {
-        email: String(email).trim().toLowerCase(),
-      });
+      if (isForgotPassword) {
+        await API.post("/auth/forgot-password", {
+          email: cleanEmail,
+        });
+      } else {
+        await API.post("/auth/resend-code", {
+          email: cleanEmail,
+        });
+      }
 
       setOtp(["", "", "", ""]);
       setError("");
@@ -165,11 +202,7 @@ export default function OtpScreen() {
             </TouchableOpacity>
 
             <View style={styles.content}>
-              <Image
-                source={logoImage}
-                style={styles.logo}
-                contentFit="contain"
-              />
+              <Image source={logoImage} style={styles.logo} contentFit="contain" />
 
               <Text style={styles.title}>Verify your email</Text>
 

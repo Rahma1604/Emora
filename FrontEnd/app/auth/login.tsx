@@ -19,6 +19,7 @@ import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import API from "../api";
+
 const logoImage = require("../../assets/images/images/emora-logo.png");
 
 type ErrorsType = {
@@ -96,17 +97,24 @@ export default function LoginScreen() {
       }
     } catch (error) {
       if (axios.isAxiosError(error)) {
+        console.log("FULL LOGIN ERROR:", {
+          message: error.message,
+          status: error.response?.status,
+          data: error.response?.data,
+          url: error.config?.url,
+          baseURL: error.config?.baseURL,
+        });
+
         const message =
           error.response?.data?.msg ||
           error.response?.data?.message ||
           error.response?.data?.error ||
+          error.message ||
           "Login failed";
 
         setErrors({
           password: message,
         });
-
-        console.log("Login error:", message);
       } else {
         setErrors({
           password: "Something went wrong",
@@ -216,7 +224,7 @@ export default function LoginScreen() {
               <TouchableOpacity
                 activeOpacity={0.7}
                 style={styles.forgotWrapper}
-                onPress={() => console.log("Forgot Password")}
+                onPress={() => router.push("/auth/forgot-password")}
               >
                 <Text style={styles.forgotText}>Forgot Password ?</Text>
               </TouchableOpacity>
@@ -357,7 +365,8 @@ const styles = StyleSheet.create({
 
   forgotText: {
     fontSize: 11,
-    color: "#A0A0A0",
+    color: "#8dc0f0",
+    fontWeight: "500",
   },
 
   bottomSection: {

@@ -16,17 +16,13 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import API from "../api";
 
 const logoImage = require("../../assets/images/images/emora-logo.png");
 
 type ErrorsType = {
-  name?: string;
   email?: string;
-  password?: string;
-  confirmPassword?: string;
 };
 
 type RenderInputProps = {
@@ -34,57 +30,30 @@ type RenderInputProps = {
   value: string;
   onChangeText: (text: string) => void;
   error?: string;
-  secureTextEntry?: boolean;
-  showEye?: boolean;
-  isPasswordVisible?: boolean;
-  onToggleVisibility?: () => void;
   keyboardType?: KeyboardTypeOptions;
 };
 
-export default function RegisterScreen() {
-  const [fullName, setFullName] = useState("");
+export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
   const [errors, setErrors] = useState<ErrorsType>({});
   const [loading, setLoading] = useState(false);
 
-  const emailRegex = useMemo(() => /^[^\s@]+@(gmail|yahoo|icloud)\.com$/, []);
+  const emailRegex = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/, []);
 
   const validateForm = () => {
     const newErrors: ErrorsType = {};
 
-    if (!fullName.trim()) {
-      newErrors.name = "Full name is required";
-    } else if (fullName.trim().length < 3) {
-      newErrors.name = "Full name must be at least 3 characters";
-    }
-
     if (!email.trim()) {
       newErrors.email = "Email address is required";
-    } else if (!emailRegex.test(email.trim().toLowerCase())) {
-      newErrors.email = "Please use Gmail, Yahoo, or iCloud email";
-    }
-
-    if (!password) {
-      newErrors.password = "Password is required";
-    }
-
-    if (!confirmPassword) {
-      newErrors.confirmPassword = "Confirm Password is required";
-    } else if (password !== confirmPassword) {
-      newErrors.confirmPassword = "Passwords do not match";
+    } else if (!emailRegex.test(email.trim())) {
+      newErrors.email = "Please enter a valid email address";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleCreateAccount = async () => {
+  const handleContinue = async () => {
     const isValid = validateForm();
     if (!isValid) return;
 
@@ -92,35 +61,22 @@ export default function RegisterScreen() {
     setErrors({});
 
     try {
-      const role = await AsyncStorage.getItem("role");
-
-      console.log("Selected role:", role);
-
-      if (!role) {
-        setErrors({
-          email: "Please select your role first",
-        });
-        router.push("/role-selection");
-        return;
-      }
-
       const cleanEmail = email.trim().toLowerCase();
 
-      await API.post("/auth/register", {
-        fullName: fullName.trim(),
+      await API.post("/auth/forgot-password", {
         email: cleanEmail,
-        password,
-        confirmPassword,
-        role,
       });
 
       router.push({
         pathname: "/auth/otp",
-        params: { email: cleanEmail },
+        params: {
+          email: cleanEmail,
+          mode: "forgot-password",
+        },
       });
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.log("FULL REGISTER ERROR:", {
+        console.log("FULL FORGOT PASSWORD ERROR:", {
           message: error.message,
           status: error.response?.status,
           data: error.response?.data,
@@ -133,7 +89,7 @@ export default function RegisterScreen() {
           error.response?.data?.message ||
           error.response?.data?.error ||
           error.message ||
-          "Registration failed";
+          "Failed to send OTP";
 
         setErrors({
           email: message,
@@ -155,10 +111,6 @@ export default function RegisterScreen() {
     value,
     onChangeText,
     error,
-    secureTextEntry = false,
-    showEye = false,
-    isPasswordVisible = false,
-    onToggleVisibility,
     keyboardType = "default",
   }: RenderInputProps) => {
     return (
@@ -169,25 +121,10 @@ export default function RegisterScreen() {
             placeholderTextColor="#A7A7A7"
             value={value}
             onChangeText={onChangeText}
-            secureTextEntry={secureTextEntry}
             keyboardType={keyboardType}
             autoCapitalize="none"
             style={styles.input}
           />
-
-          {showEye && (
-            <TouchableOpacity
-              onPress={onToggleVisibility}
-              activeOpacity={0.7}
-              style={styles.eyeButton}
-            >
-              <Ionicons
-                name={isPasswordVisible ? "eye-off-outline" : "eye-outline"}
-                size={18}
-                color="#9CA3AF"
-              />
-            </TouchableOpacity>
-          )}
         </View>
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -214,65 +151,41 @@ export default function RegisterScreen() {
             bounces={false}
             keyboardShouldPersistTaps="handled"
           >
-            <View style={styles.topSection}>
-              <Image
-                source={logoImage}
-                style={styles.logo}
-                contentFit="contain"
-              />
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.backButton}
+              onPress={() => router.back()}
+            >
+              <Ionicons name="chevron-back" size={24} color="#111111" />
+            </TouchableOpacity>
 
-              <Text style={styles.title}>Create your account</Text>
+            <View style={styles.contentWrapper}>
+              <View style={styles.topSection}>
+                <Image source={logoImage} style={styles.logo} contentFit="contain" />
 
-              <Text style={styles.subtitle}>
-                Sign up to start tracking and understanding your child&apos;s
-                progress.
-              </Text>
-            </View>
+                <Text style={styles.title}>Forget password</Text>
 
-            <View style={styles.formSection}>
-              {renderInput({
-                placeholder: "Full name",
-                value: fullName,
-                onChangeText: setFullName,
-                error: errors.name,
-              })}
+                <Text style={styles.subtitle}>
+                  Sign up to start tracking and understanding your child&apos;s
+                  progress.
+                </Text>
+              </View>
 
-              {renderInput({
-                placeholder: "Email address",
-                value: email,
-                onChangeText: setEmail,
-                error: errors.email,
-                keyboardType: "email-address",
-              })}
-
-              {renderInput({
-                placeholder: "Password",
-                value: password,
-                onChangeText: setPassword,
-                error: errors.password,
-                secureTextEntry: !showPassword,
-                showEye: true,
-                isPasswordVisible: showPassword,
-                onToggleVisibility: () => setShowPassword((prev) => !prev),
-              })}
-
-              {renderInput({
-                placeholder: "Confirm Password",
-                value: confirmPassword,
-                onChangeText: setConfirmPassword,
-                error: errors.confirmPassword,
-                secureTextEntry: !showConfirmPassword,
-                showEye: true,
-                isPasswordVisible: showConfirmPassword,
-                onToggleVisibility: () =>
-                  setShowConfirmPassword((prev) => !prev),
-              })}
+              <View style={styles.formSection}>
+                {renderInput({
+                  placeholder: "Email address",
+                  value: email,
+                  onChangeText: setEmail,
+                  error: errors.email,
+                  keyboardType: "email-address",
+                })}
+              </View>
             </View>
 
             <View style={styles.bottomSection}>
               <TouchableOpacity
                 activeOpacity={0.9}
-                onPress={handleCreateAccount}
+                onPress={handleContinue}
                 style={styles.buttonWrapper}
                 disabled={loading}
               >
@@ -285,20 +198,10 @@ export default function RegisterScreen() {
                   {loading ? (
                     <ActivityIndicator color="#111111" />
                   ) : (
-                    <Text style={styles.buttonText}>Create Account</Text>
+                    <Text style={styles.buttonText}>Continue</Text>
                   )}
                 </LinearGradient>
               </TouchableOpacity>
-
-              <Text style={styles.footerText}>
-                Already Have An Account?{" "}
-                <Text
-                  style={styles.loginText}
-                  onPress={() => router.push("/auth/login")}
-                >
-                  Login
-                </Text>
-              </Text>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -324,20 +227,32 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 28,
-    paddingTop: 34,
+    paddingTop: 42,
     paddingBottom: 28,
     justifyContent: "space-between",
   },
 
+  backButton: {
+    width: 36,
+    height: 36,
+    justifyContent: "center",
+    alignItems: "flex-start",
+  },
+
+  contentWrapper: {
+    flex: 1,
+    justifyContent: "flex-start",
+  },
+
   topSection: {
     alignItems: "center",
-    marginTop: 8,
+    marginTop: 36,
   },
 
   logo: {
     width: 74,
     height: 74,
-    marginBottom: 22,
+    marginBottom: 18,
   },
 
   title: {
@@ -349,15 +264,15 @@ const styles = StyleSheet.create({
   },
 
   subtitle: {
-    width: "88%",
-    fontSize: 14,
-    lineHeight: 22,
+    width: "86%",
+    fontSize: 13,
+    lineHeight: 20,
     color: "#8D8D8D",
     textAlign: "center",
   },
 
   formSection: {
-    marginTop: 28,
+    marginTop: 30,
   },
 
   inputBlock: {
@@ -379,11 +294,6 @@ const styles = StyleSheet.create({
     color: "#1F1F1F",
   },
 
-  eyeButton: {
-    paddingLeft: 10,
-    paddingVertical: 4,
-  },
-
   inputError: {
     borderWidth: 1,
     borderColor: "#EF4444",
@@ -398,7 +308,6 @@ const styles = StyleSheet.create({
   },
 
   bottomSection: {
-    marginTop: 34,
     paddingBottom: 6,
   },
 
@@ -414,20 +323,8 @@ const styles = StyleSheet.create({
   },
 
   buttonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: "#111111",
-  },
-
-  footerText: {
-    marginTop: 22,
-    textAlign: "center",
-    fontSize: 13,
-    color: "#A0A0A0",
-  },
-
-  loginText: {
-    color: "#8dc0f0",
-    fontWeight: "500",
   },
 });
