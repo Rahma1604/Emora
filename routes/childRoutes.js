@@ -2,8 +2,6 @@ const express = require('express');
 const router = express.Router();
 const Child = require('../models/Child');
 const { checkToken } = require('../middleware/authMiddleware');
-const { uploadDrawings } = require('../config/cloudinary');
-
 router.get('/all', checkToken, async (req, res) => {
     try {
         const children = await Child.find({ parentId: req.user._id });
@@ -58,38 +56,4 @@ router.put('/:childId', checkToken, async (req, res) => {
         res.status(500).json({ error: "Failed to update child" });
     }
 });
-
-router.post('/:childId/drawings', checkToken, uploadDrawings.single('drawing'), async (req, res) => {
-    try {
-        const { childId } = req.params;
-
-        if (!req.file) {
-            return res.status(400).json({ msg: "No drawing uploaded" });
-        }
-
-        const child = await Child.findOne({ _id: childId, parentId: req.user._id });
-
-        if (!child) {
-            return res.status(404).json({ msg: "Child not found" });
-        }
-
-        const drawing = {
-            ImageUrl: req.file.path,
-            analysisResult: "",
-            status: "pending",
-            createdAt: new Date()
-        };
-
-        child.drawings.push(drawing);
-        await child.save();
-
-        res.status(201).json({
-            message: "Drawing added successfully",
-            drawing: child.drawings[child.drawings.length - 1]
-        });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to upload drawing" });
-    }
-});
-
 module.exports = router;
