@@ -10,11 +10,15 @@ import {
   Platform,
   ScrollView,
   KeyboardTypeOptions,
+  ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
+import API from "../api";
 
 const logoImage = require("../../assets/images/images/emora-logo.png");
 
@@ -47,8 +51,9 @@ export default function RegisterScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [errors, setErrors] = useState<ErrorsType>({});
+  const [loading, setLoading] = useState(false);
 
-  const emailRegex = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/, []);
+  const emailRegex = useMemo(() => /^[^\s@]+@(gmail|yahoo|icloud)\.com$/, []);
 
   const validateForm = () => {
     const newErrors: ErrorsType = {};
@@ -61,8 +66,8 @@ export default function RegisterScreen() {
 
     if (!email.trim()) {
       newErrors.email = "Email address is required";
-    } else if (!emailRegex.test(email.trim())) {
-      newErrors.email = "Please enter a valid email address";
+    } else if (!emailRegex.test(email.trim().toLowerCase())) {
+      newErrors.email = "Please use Gmail, Yahoo, or iCloud email";
     }
 
     if (!password) {
@@ -79,15 +84,61 @@ export default function RegisterScreen() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleCreateAccount = () => {
+  const handleCreateAccount = async () => {
     const isValid = validateForm();
-
     if (!isValid) return;
 
-    router.push({
-      pathname: "/auth/otp",
-      params: { email: email.trim() },
-    });
+    setLoading(true);
+    setErrors({});
+
+    try {
+      const role = await AsyncStorage.getItem("role");
+
+      if (!role) {
+        setErrors({
+          email: "Please select your role first",
+        });
+        router.push("/role-selection");
+        return;
+      }
+
+      const cleanEmail = email.trim().toLowerCase();
+
+      await API.post("/auth/register", {
+        fullName: fullName.trim(),
+        email: cleanEmail,
+        password,
+        confirmPassword,
+        role,
+      });
+
+      router.push({
+        pathname: "/auth/otp",
+        params: { email: cleanEmail },
+      });
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const message =
+          error.response?.data?.msg ||
+          error.response?.data?.message ||
+          error.response?.data?.error ||
+          "Registration failed";
+
+        setErrors({
+          email: message,
+        });
+
+        console.log("Register error:", message);
+      } else {
+        setErrors({
+          email: "Something went wrong",
+        });
+
+        console.log("Unexpected error:", error);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderInput = ({
@@ -164,7 +215,7 @@ export default function RegisterScreen() {
               <Text style={styles.title}>Create your account</Text>
 
               <Text style={styles.subtitle}>
-                Sign up to start tracking and understanding your child's
+                Sign up to start tracking and understanding your child&apos;s
                 progress.
               </Text>
             </View>
@@ -214,6 +265,7 @@ export default function RegisterScreen() {
                 activeOpacity={0.9}
                 onPress={handleCreateAccount}
                 style={styles.buttonWrapper}
+                disabled={loading}
               >
                 <LinearGradient
                   colors={["#8dc0f0", "#f9a8a7"]}
@@ -221,7 +273,11 @@ export default function RegisterScreen() {
                   end={{ x: 1, y: 0.5 }}
                   style={styles.button}
                 >
-                  <Text style={styles.buttonText}>Create Account</Text>
+                  {loading ? (
+                    <ActivityIndicator color="#111111" />
+                  ) : (
+                    <Text style={styles.buttonText}>Create Account</Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
 

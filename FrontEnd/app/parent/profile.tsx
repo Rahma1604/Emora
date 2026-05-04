@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -9,20 +9,65 @@ import {
   ScrollView,
   Modal,
   Pressable,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import API from "../api";
 
 export default function ProfileScreen() {
-  const [notificationsEnabled, setNotificationsEnabled] = React.useState(true);
-  const [languageModalVisible, setLanguageModalVisible] = React.useState(false);
-  const [selectedLanguage, setSelectedLanguage] = React.useState("Arabic");
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [languageModalVisible, setLanguageModalVisible] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState("Arabic");
+
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState("User");
+  const [email, setEmail] = useState("");
+  const [profilePic, setProfilePic] = useState("");
+
+  const fetchProfile = async () => {
+    try {
+      setLoading(true);
+      const response = await API.get("/auth/profile");
+
+      setName(response.data.fullName || "User");
+      setEmail(response.data.email || "");
+      setProfilePic(response.data.profilePic || "");
+    } catch (error) {
+      console.log("Profile error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+    }, [])
+  );
+
+  const handleLogout = async () => {
+    await AsyncStorage.removeItem("token");
+    await AsyncStorage.removeItem("user");
+    router.replace("/auth/login");
+  };
 
   const handleSelectLanguage = (language: string) => {
     setSelectedLanguage(language);
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loaderBox}>
+          <ActivityIndicator size="large" color="#222" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -34,13 +79,17 @@ export default function ProfileScreen() {
           <View style={styles.profileSection}>
             <View style={styles.avatarWrapper}>
               <Image
-                source={require("../../assets/images/images/image 119.png")}
+                source={
+                  profilePic
+                    ? { uri: profilePic }
+                    : require("../../assets/images/images/image 119.png")
+                }
                 style={styles.avatar}
               />
             </View>
 
-            <Text style={styles.name}>Marwa Mohamed</Text>
-            <Text style={styles.email}>marwa_m189@gmail.com</Text>
+            <Text style={styles.name}>{name}</Text>
+            <Text style={styles.email}>{email}</Text>
 
             <TouchableOpacity
               activeOpacity={0.9}
@@ -147,7 +196,11 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity activeOpacity={0.9} style={styles.logoutBtn}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            style={styles.logoutBtn}
+            onPress={handleLogout}
+          >
             <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
 
@@ -187,7 +240,7 @@ export default function ProfileScreen() {
             <Text style={styles.navText}>Search</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.navItem} activeOpacity={1}>
+          <TouchableOpacity style={styles.navItem}>
             <Feather name="user" size={20} color="#222" />
             <Text style={[styles.navText, styles.activeNavText]}>Profile</Text>
           </TouchableOpacity>
@@ -206,29 +259,21 @@ export default function ProfileScreen() {
             <Pressable style={styles.bottomSheet}>
               <Text style={styles.bottomSheetTitle}>Select Language</Text>
 
-              <TouchableOpacity
-                style={styles.languageOption}
-                onPress={() => handleSelectLanguage("Arabic")}
-              >
-                <Text style={styles.languageText}>Arabic</Text>
-                <View style={styles.radioOuter}>
-                  {selectedLanguage === "Arabic" && (
-                    <View style={styles.radioInner} />
-                  )}
-                </View>
-              </TouchableOpacity>
+              {["Arabic", "English"].map((lang) => (
+                <TouchableOpacity
+                  key={lang}
+                  style={styles.languageOption}
+                  onPress={() => handleSelectLanguage(lang)}
+                >
+                  <Text style={styles.languageText}>{lang}</Text>
 
-              <TouchableOpacity
-                style={styles.languageOption}
-                onPress={() => handleSelectLanguage("English")}
-              >
-                <Text style={styles.languageText}>English</Text>
-                <View style={styles.radioOuter}>
-                  {selectedLanguage === "English" && (
-                    <View style={styles.radioInner} />
-                  )}
-                </View>
-              </TouchableOpacity>
+                  <View style={styles.radioOuter}>
+                    {selectedLanguage === lang && (
+                      <View style={styles.radioInner} />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
             </Pressable>
           </Pressable>
         </Modal>
@@ -238,27 +283,11 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-
-  container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
-    paddingBottom: 150,
-  },
-
-  profileSection: {
-    alignItems: "center",
-    marginTop: 8,
-  },
-
+  safeArea: { flex: 1, backgroundColor: "#fff" },
+  container: { flex: 1, backgroundColor: "#fff" },
+  loaderBox: { flex: 1, justifyContent: "center", alignItems: "center" },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 150 },
+  profileSection: { alignItems: "center", marginTop: 8 },
   avatarWrapper: {
     width: 84,
     height: 84,
@@ -268,29 +297,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 10,
   },
-
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-  },
-
-  name: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#222",
-  },
-
-  email: {
-    marginTop: 2,
-    fontSize: 14,
-    color: "#8E8E93",
-  },
-
-  editBtnWrapper: {
-    marginTop: 12,
-  },
-
+  avatar: { width: 64, height: 64, borderRadius: 32 },
+  name: { fontSize: 22, fontWeight: "700", color: "#222" },
+  email: { marginTop: 2, fontSize: 14, color: "#8E8E93" },
+  editBtnWrapper: { marginTop: 12 },
   editBtn: {
     height: 38,
     paddingHorizontal: 22,
@@ -298,13 +308,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
-  editBtnText: {
-    fontSize: 14,
-    color: "#222",
-    fontWeight: "500",
-  },
-
+  editBtnText: { fontSize: 14, color: "#222", fontWeight: "500" },
   sectionTitle: {
     marginTop: 20,
     marginBottom: 8,
@@ -312,7 +316,6 @@ const styles = StyleSheet.create({
     color: "#8E8E93",
     fontWeight: "500",
   },
-
   card: {
     backgroundColor: "#F7F7F8",
     borderRadius: 18,
@@ -320,7 +323,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ECECEC",
   },
-
   row: {
     minHeight: 54,
     paddingHorizontal: 16,
@@ -329,25 +331,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     backgroundColor: "#F7F7F8",
   },
-
-  rowLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  rowText: {
-    marginLeft: 12,
-    fontSize: 15,
-    color: "#222",
-    fontWeight: "400",
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: "#E7E7E7",
-    marginLeft: 16,
-  },
-
+  rowLeft: { flexDirection: "row", alignItems: "center" },
+  rowText: { marginLeft: 12, fontSize: 15, color: "#222", fontWeight: "400" },
+  divider: { height: 1, backgroundColor: "#E7E7E7", marginLeft: 16 },
   logoutBtn: {
     marginTop: 18,
     height: 52,
@@ -358,20 +344,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#fff",
   },
-
-  logoutText: {
-    color: "#FF5A4F",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-
+  logoutText: { color: "#FF5A4F", fontSize: 18, fontWeight: "600" },
   version: {
     marginTop: 8,
     textAlign: "center",
     fontSize: 13,
     color: "#A0A0A0",
   },
-
   bottomNav: {
     position: "absolute",
     bottom: 12,
@@ -383,35 +362,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-around",
+    paddingHorizontal: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 10,
     elevation: 8,
-    paddingHorizontal: 8,
   },
-
-  navItem: {
-    alignItems: "center",
-    justifyContent: "center",
-    width: 55,
-  },
-
-  navText: {
-    fontSize: 11,
-    color: "#999",
-    marginTop: 4,
-  },
-
-  activeNavText: {
-    color: "#222",
-    fontWeight: "600",
-  },
-
-  centerButtonWrapper: {
-    marginTop: -30,
-  },
-
+  navItem: { alignItems: "center", justifyContent: "center", width: 55 },
+  navText: { fontSize: 11, color: "#999", marginTop: 4 },
+  activeNavText: { color: "#222", fontWeight: "600" },
+  centerButtonWrapper: { marginTop: -30 },
   centerButton: {
     width: 60,
     height: 60,
@@ -424,29 +385,25 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",
     justifyContent: "flex-end",
   },
-
   bottomSheet: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#fff",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 30,
   },
-
   bottomSheetTitle: {
     fontSize: 16,
     fontWeight: "600",
     color: "#222",
     marginBottom: 18,
   },
-
   languageOption: {
     height: 54,
     borderWidth: 1,
@@ -457,15 +414,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#fff",
   },
-
-  languageText: {
-    fontSize: 14,
-    color: "#222",
-    fontWeight: "400",
-  },
-
+  languageText: { fontSize: 14, color: "#222", fontWeight: "400" },
   radioOuter: {
     width: 20,
     height: 20,
@@ -475,7 +425,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
   radioInner: {
     width: 10,
     height: 10,

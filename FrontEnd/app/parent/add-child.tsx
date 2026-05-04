@@ -1,21 +1,73 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
+import axios from "axios";
+import API from "../api";
 
 export default function AddChild() {
+  const [name, setName] = useState("");
+  const [age, setAge] = useState("");
+  const [gender, setGender] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleAddChild = async () => {
+    if (!name.trim() || !age.trim() || !gender.trim()) {
+      setError("Please fill child name, age, and gender");
+      return;
+    }
+
+    setError("");
+    setLoading(true);
+
+    try {
+      await API.post("/children/add", {
+        name: name.trim(),
+        age: Number(age),
+        gender: gender.trim(),
+      });
+
+      router.replace("/parent/parentHome");
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const message =
+          error.response?.data?.msg ||
+          error.response?.data?.message ||
+          error.response?.data?.error ||
+          "Failed to add child";
+
+        setError(message);
+      } else {
+        setError("Something went wrong");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleGender = () => {
+    setGender((prev) => {
+      if (prev === "") return "male";
+      if (prev === "male") return "female";
+      return "";
+    });
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        {/* Soft top tint like the home screen */}
         <View style={styles.topGradientWrapper}>
           <LinearGradient
             colors={[
@@ -42,7 +94,6 @@ export default function AddChild() {
           />
         </View>
 
-        {/* Back button */}
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
@@ -51,15 +102,15 @@ export default function AddChild() {
           <Feather name="chevron-left" size={22} color="#222" />
         </TouchableOpacity>
 
-        {/* Title */}
         <Text style={styles.title}>Add New Child Profile</Text>
 
-        {/* Form */}
         <View style={styles.form}>
           <TextInput
             placeholder="Child’s Nickname / First Name"
             placeholderTextColor="#B8B8B8"
             style={styles.input}
+            value={name}
+            onChangeText={setName}
           />
 
           <TextInput
@@ -67,10 +118,18 @@ export default function AddChild() {
             placeholderTextColor="#B8B8B8"
             style={styles.input}
             keyboardType="numeric"
+            value={age}
+            onChangeText={setAge}
           />
 
-          <TouchableOpacity activeOpacity={0.85} style={styles.input}>
-            <Text style={styles.dropdownText}>Gender</Text>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={styles.input}
+            onPress={toggleGender}
+          >
+            <Text style={[styles.dropdownText, gender ? styles.selectedText : null]}>
+              {gender ? gender : "Gender"}
+            </Text>
             <Feather name="chevron-down" size={18} color="#B8B8B8" />
           </TouchableOpacity>
 
@@ -80,19 +139,30 @@ export default function AddChild() {
             style={[styles.input, styles.notesInput]}
             multiline
             textAlignVertical="top"
+            value={notes}
+            onChangeText={setNotes}
           />
+
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
 
-        {/* Bottom button */}
         <View style={styles.buttonWrapper}>
-          <TouchableOpacity activeOpacity={0.9}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={handleAddChild}
+            disabled={loading}
+          >
             <LinearGradient
               colors={["#B9D8F6", "#FBC0BF"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.addButton}
             >
-              <Text style={styles.addButtonText}>Add Child</Text>
+              {loading ? (
+                <ActivityIndicator color="#222" />
+              ) : (
+                <Text style={styles.addButtonText}>Add Child</Text>
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -171,10 +241,20 @@ const styles = StyleSheet.create({
     color: "#B8B8B8",
   },
 
+  selectedText: {
+    color: "#222",
+  },
+
   notesInput: {
     height: 84,
     paddingTop: 12,
     alignItems: "flex-start",
+  },
+
+  errorText: {
+    color: "#EF4444",
+    fontSize: 12,
+    marginTop: 2,
   },
 
   buttonWrapper: {

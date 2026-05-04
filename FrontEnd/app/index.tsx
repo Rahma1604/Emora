@@ -7,8 +7,7 @@ import { Asset } from "expo-asset";
 const onboardingImage1 = require("../assets/images/images/onboarding-1.jpg");
 const onboardingImage2 = require("../assets/images/images/onboarding-2.jpg");
 const onboardingImage3 = require("../assets/images/images/onboarding-3.jpg");
-const splashLogo = require("..//assets/images/images/puzzle-logo.png");
-
+const puzzleLogo = require("../assets/images/images/puzzle-logo.png");
 export default function SplashScreen() {
   useEffect(() => {
     const prepareApp = async () => {
@@ -39,7 +38,7 @@ export default function SplashScreen() {
       style={styles.container}
     >
       <View style={styles.logoContainer}>
-        <Image source={splashLogo} style={styles.logoImage} resizeMode="contain"/>
+        <Image source={puzzleLogo} style={styles.logoImage} resizeMode="contain"/>
       </View>
     </LinearGradient>
   );

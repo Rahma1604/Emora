@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -6,20 +6,83 @@ import {
   StyleSheet,
   TextInput,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import API from "../api";
 
 export default function EditProfileScreen() {
-  const [name, setName] = useState("Marwa Mohamed");
-  const [email, setEmail] = useState("marwa_m189@gmail.com");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [profilePic, setProfilePic] = useState("");
+
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
+  const [error, setError] = useState("");
+
+  const fetchProfile = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await API.get("/auth/profile");
+
+      setName(response.data.fullName || "");
+      setEmail(response.data.email || "");
+      setProfilePic(response.data.profilePic || "");
+    } catch (err) {
+      setError("Failed to load profile");
+      console.log("Edit profile error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+    }, [])
+  );
+
+  const handleUpdateProfile = async () => {
+    if (!name.trim()) {
+      setError("Name is required");
+      return;
+    }
+
+    try {
+      setUpdating(true);
+      setError("");
+
+      await API.put("/auth/update-profile", {
+        fullName: name.trim(),
+      });
+
+      router.back();
+    } catch (err) {
+      setError("Failed to update profile");
+      console.log("Update profile error:", err);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loaderBox}>
+          <ActivityIndicator size="large" color="#222" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => router.back()}
@@ -32,11 +95,14 @@ export default function EditProfileScreen() {
           <Text style={styles.headerTitle}>Edit My Profile</Text>
         </View>
 
-        {/* Avatar */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarWrapper}>
             <Image
-              source={require("../../assets/images/images/image 119.png")}
+              source={
+                profilePic
+                  ? { uri: profilePic }
+                  : require("../../assets/images/images/image 119.png")
+              }
               style={styles.avatar}
             />
           </View>
@@ -46,7 +112,6 @@ export default function EditProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Form */}
         <View style={styles.form}>
           <View style={styles.inputBlock}>
             <Text style={styles.label}>Name</Text>
@@ -63,26 +128,35 @@ export default function EditProfileScreen() {
             <Text style={styles.label}>Email</Text>
             <TextInput
               value={email}
-              onChangeText={setEmail}
-              style={styles.input}
+              style={[styles.input, styles.disabledInput]}
               placeholder="Enter your email"
               placeholderTextColor="#B0B0B0"
               keyboardType="email-address"
               autoCapitalize="none"
+              editable={false}
             />
           </View>
+
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
 
-        {/* Bottom Button */}
         <View style={styles.buttonWrapper}>
-          <TouchableOpacity activeOpacity={0.9}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={handleUpdateProfile}
+            disabled={updating}
+          >
             <LinearGradient
               colors={["#B9D8F6", "#FBC0BF"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.updateButton}
             >
-              <Text style={styles.updateButtonText}>Update My Profile</Text>
+              {updating ? (
+                <ActivityIndicator color="#222" />
+              ) : (
+                <Text style={styles.updateButtonText}>Update My Profile</Text>
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -95,6 +169,12 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: "#FFFFFF",
+  },
+
+  loaderBox: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   container: {
@@ -175,6 +255,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#222",
     backgroundColor: "#FFFFFF",
+  },
+
+  disabledInput: {
+    color: "#8E8E93",
+    backgroundColor: "#F7F7F8",
+  },
+
+  errorText: {
+    color: "#EF4444",
+    fontSize: 13,
+    marginTop: -8,
   },
 
   buttonWrapper: {

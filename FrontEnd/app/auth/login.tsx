@@ -10,13 +10,15 @@ import {
   Platform,
   ScrollView,
   KeyboardTypeOptions,
+  ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
+import axios from "axios";
+import API from "../api";
 const logoImage = require("../../assets/images/images/emora-logo.png");
 
 type ErrorsType = {
@@ -42,6 +44,7 @@ export default function LoginScreen() {
 
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<ErrorsType>({});
+  const [loading, setLoading] = useState(false);
 
   const emailRegex = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/, []);
 
@@ -62,30 +65,59 @@ export default function LoginScreen() {
     return Object.keys(newErrors).length === 0;
   };
 
- const handleLogin = async () => {
-  const isValid = validateForm();
+  const handleLogin = async () => {
+    const isValid = validateForm();
+    if (!isValid) return;
 
-  if (!isValid) return;
+    setLoading(true);
+    setErrors({});
 
-  try {
-    // نجيب role اللي اتخزن من صفحة الاختيار
-    const role = await AsyncStorage.getItem("role");
+    try {
+      const response = await API.post("/auth/login", {
+        email: email.trim().toLowerCase(),
+        password,
+      });
 
-    console.log("Login success, role:", role);
+      const { token, user } = response.data;
 
-    if (role === "parent") {
-      router.replace("/parent/parentHome");
-    } else if (role === "doctor") {
-      router.replace("/doctor/home");
-    } else {
-      // fallback لو حصل أي مشكلة
-      router.replace("/auth/login");
+      await AsyncStorage.setItem("token", token);
+      await AsyncStorage.setItem("user", JSON.stringify(user));
+
+      console.log("Login success:", user);
+
+      const role = user?.role || (await AsyncStorage.getItem("role"));
+
+      if (role === "parent") {
+        router.replace("/parent/parentHome");
+      } else if (role === "doctor") {
+        router.replace("/doctor/home");
+      } else {
+        router.replace("/role-selection");
+      }
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const message =
+          error.response?.data?.msg ||
+          error.response?.data?.message ||
+          error.response?.data?.error ||
+          "Login failed";
+
+        setErrors({
+          password: message,
+        });
+
+        console.log("Login error:", message);
+      } else {
+        setErrors({
+          password: "Something went wrong",
+        });
+
+        console.log("Unexpected error:", error);
+      }
+    } finally {
+      setLoading(false);
     }
-
-  } catch (error) {
-    console.log("Error getting role:", error);
-  }
-};
+  };
 
   const renderInput = ({
     placeholder,
@@ -152,11 +184,7 @@ export default function LoginScreen() {
             keyboardShouldPersistTaps="handled"
           >
             <View style={styles.topSection}>
-              <Image
-                source={logoImage}
-                style={styles.logo}
-                contentFit="contain"
-              />
+              <Image source={logoImage} style={styles.logo} contentFit="contain" />
 
               <Text style={styles.title}>Login to your account</Text>
 
@@ -199,6 +227,7 @@ export default function LoginScreen() {
                 activeOpacity={0.9}
                 onPress={handleLogin}
                 style={styles.buttonWrapper}
+                disabled={loading}
               >
                 <LinearGradient
                   colors={["#8dc0f0", "#f9a8a7"]}
@@ -206,7 +235,11 @@ export default function LoginScreen() {
                   end={{ x: 1, y: 0.5 }}
                   style={styles.button}
                 >
-                  <Text style={styles.buttonText}>Login</Text>
+                  {loading ? (
+                    <ActivityIndicator color="#111111" />
+                  ) : (
+                    <Text style={styles.buttonText}>Login</Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
 

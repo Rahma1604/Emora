@@ -1,21 +1,69 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   Image,
   StyleSheet,
+  ActivityIndicator,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Ionicons, Feather } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import API from "../api";
+
+type Child = {
+  _id: string;
+  name: string;
+  age: number;
+  gender: string;
+};
 
 export default function Home() {
+  const [children, setChildren] = useState<Child[]>([]);
+  const [userName, setUserName] = useState("User");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const fetchHomeData = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const savedUser = await AsyncStorage.getItem("user");
+      if (savedUser) {
+        const user = JSON.parse(savedUser);
+        setUserName(user?.name || "User");
+      }
+
+      const response = await API.get("/children/all");
+      setChildren(response.data);
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.msg ||
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "Failed to load children";
+
+      setError(message);
+      console.log("Parent home error:", err?.response?.data || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchHomeData();
+    }, [])
+  );
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        {/* Soft top tint like the UX */}
         <View style={styles.topGradientWrapper}>
           <LinearGradient
             colors={[
@@ -43,7 +91,6 @@ export default function Home() {
           />
         </View>
 
-        {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Image
@@ -53,7 +100,7 @@ export default function Home() {
 
             <View>
               <Text style={styles.welcomeText}>Welcome 👋</Text>
-              <Text style={styles.userName}>Marwa Mohamed</Text>
+              <Text style={styles.userName}>{userName}</Text>
             </View>
           </View>
 
@@ -62,39 +109,83 @@ export default function Home() {
           </TouchableOpacity>
         </View>
 
-        {/* Center Content */}
         <View style={styles.content}>
-          <Image
-            source={require("../../assets/images/images/child.png")}
-            style={styles.childImage}
-            resizeMode="contain"
-          />
+          {loading ? (
+            <ActivityIndicator color="#222" />
+          ) : error ? (
+            <Text style={styles.errorText}>{error}</Text>
+          ) : children.length === 0 ? (
+            <>
+              <Image
+                source={require("../../assets/images/images/child.png")}
+                style={styles.childImage}
+                resizeMode="contain"
+              />
 
-          <Text style={styles.emptyText}>
-            You haven't added any children yet. Tap the button
-          </Text>
-          <Text style={styles.emptyText}>
-            below to add your first child's profile and start
-          </Text>
-          <Text style={styles.emptyText}>tracking their progress</Text>
+              <Text style={styles.emptyText}>
+                You haven't added any children yet. Tap the button
+              </Text>
+              <Text style={styles.emptyText}>
+                below to add your first child's profile and start
+              </Text>
+              <Text style={styles.emptyText}>tracking their progress</Text>
 
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => router.push("/parent/add-child")}
-            style={styles.buttonWrapper}
-          >
-            <LinearGradient
-              colors={["#B9D8F6", "#FBC0BF"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.addButton}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => router.push("/parent/add-child")}
+                style={styles.buttonWrapper}
+              >
+                <LinearGradient
+                  colors={["#B9D8F6", "#FBC0BF"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.addButton}
+                >
+                  <Text style={styles.addButtonText}>Add Your First Child</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <ScrollView
+              style={styles.childrenList}
+              contentContainerStyle={styles.childrenListContent}
+              showsVerticalScrollIndicator={false}
             >
-              <Text style={styles.addButtonText}>Add Your First Child</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+              <Text style={styles.sectionTitle}>Your Children</Text>
+
+              {children.map((child) => (
+                <View key={child._id} style={styles.childCard}>
+                  <View style={styles.childAvatar}>
+                    <Ionicons name="happy-outline" size={26} color="#222" />
+                  </View>
+
+                  <View style={styles.childInfo}>
+                    <Text style={styles.childName}>{child.name}</Text>
+                    <Text style={styles.childDetails}>
+                      Age: {child.age} • Gender: {child.gender}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => router.push("/parent/add-child")}
+                style={styles.buttonWrapper}
+              >
+                <LinearGradient
+                  colors={["#B9D8F6", "#FBC0BF"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.addButton}
+                >
+                  <Text style={styles.addButtonText}>Add Another Child</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </ScrollView>
+          )}
         </View>
 
-        {/* Bottom Navigation */}
         <View style={styles.bottomNav}>
           <TouchableOpacity style={styles.navItem}>
             <Feather name="home" size={20} color="#222" />
@@ -139,18 +230,13 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-
+  safeArea: { flex: 1, backgroundColor: "#FFFFFF" },
   container: {
     flex: 1,
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 16,
     paddingTop: 10,
   },
-
   topGradientWrapper: {
     position: "absolute",
     top: 0,
@@ -159,15 +245,8 @@ const styles = StyleSheet.create({
     height: 150,
     overflow: "hidden",
   },
-
-  topHorizontalGradient: {
-    ...StyleSheet.absoluteFillObject,
-  },
-
-  topFadeGradient: {
-    ...StyleSheet.absoluteFillObject,
-  },
-
+  topHorizontalGradient: { ...StyleSheet.absoluteFillObject },
+  topFadeGradient: { ...StyleSheet.absoluteFillObject },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -176,37 +255,26 @@ const styles = StyleSheet.create({
     zIndex: 2,
     paddingHorizontal: 6,
   },
-
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
+  headerLeft: { flexDirection: "row", alignItems: "center" },
   profileImage: {
     width: 36,
     height: 36,
     borderRadius: 18,
     marginRight: 10,
   },
-
   welcomeText: {
     fontSize: 14,
     fontWeight: "600",
     color: "#222",
     lineHeight: 18,
   },
-
   userName: {
     fontSize: 14,
     fontWeight: "700",
     color: "#222",
     lineHeight: 20,
   },
-
-  notificationButton: {
-    padding: 6,
-  },
-
+  notificationButton: { padding: 6 },
   content: {
     flex: 1,
     alignItems: "center",
@@ -214,13 +282,7 @@ const styles = StyleSheet.create({
     paddingBottom: 70,
     zIndex: 2,
   },
-
-  childImage: {
-    width: 220,
-    height: 220,
-    marginBottom: 18,
-  },
-
+  childImage: { width: 220, height: 220, marginBottom: 18 },
   emptyText: {
     fontSize: 13,
     color: "#9A9A9A",
@@ -228,26 +290,67 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingHorizontal: 20,
   },
-
   buttonWrapper: {
     width: "100%",
     marginTop: 28,
     paddingHorizontal: 28,
   },
-
   addButton: {
     height: 54,
     borderRadius: 27,
     justifyContent: "center",
     alignItems: "center",
   },
-
   addButtonText: {
     color: "#222",
     fontSize: 15,
     fontWeight: "700",
   },
-
+  errorText: {
+    color: "#EF4444",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  childrenList: { width: "100%" },
+  childrenListContent: {
+    paddingTop: 40,
+    paddingBottom: 120,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#222",
+    marginBottom: 16,
+  },
+  childCard: {
+    width: "100%",
+    backgroundColor: "#F7F7F8",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  childAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  childInfo: { flex: 1 },
+  childName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#222",
+  },
+  childDetails: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#8D8D8D",
+  },
   bottomNav: {
     position: "absolute",
     bottom: 12,
@@ -267,28 +370,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     zIndex: 3,
   },
-
   navItem: {
     alignItems: "center",
     justifyContent: "center",
     width: 55,
   },
-
   navText: {
     fontSize: 11,
     color: "#999",
     marginTop: 4,
   },
-
   activeNavText: {
     color: "#222",
     fontWeight: "600",
   },
-
-  centerButtonWrapper: {
-    marginTop: -30,
-  },
-
+  centerButtonWrapper: { marginTop: -30 },
   centerButton: {
     width: 60,
     height: 60,

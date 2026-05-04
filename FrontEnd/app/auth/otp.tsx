@@ -14,6 +14,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
+import axios from "axios";
+import API from "../api";
 
 const logoImage = require("../../assets/images/images/emora-logo.png");
 
@@ -62,29 +64,80 @@ export default function OtpScreen() {
     }
   };
 
-  const handleVerify = () => {
-  const code = otp.join("");
+  const handleVerify = async () => {
+    const code = otp.join("");
 
-  if (code.length < 4) {
-    setError("Incorrect code. Please try Again");
-    return;
-  }
+    if (code.length < 4) {
+      setError("Incorrect code. Please try Again");
+      return;
+    }
 
-  setError("");
-  setIsLoading(true);
+    if (!email) {
+      setError("Email is missing. Please register again.");
+      return;
+    }
 
-  setTimeout(() => {
-    setIsLoading(false);
-    router.replace("/auth/login");
-  }, 800);
-};
-  const handleResend = () => {
+    setError("");
+    setIsLoading(true);
+
+    try {
+      await API.post("/auth/verify", {
+        email: String(email).trim().toLowerCase(),
+        code,
+      });
+
+      router.replace("/auth/login");
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const message =
+          error.response?.data?.msg ||
+          error.response?.data?.message ||
+          error.response?.data?.error ||
+          "Invalid verification code";
+
+        setError(message);
+      } else {
+        setError("Something went wrong");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
     if (secondsLeft > 0) return;
 
-    setOtp(["", "", "", ""]);
-    setError("");
-    setSecondsLeft(56);
-    inputRefs.current[0]?.focus();
+    if (!email) {
+      setError("Email is missing. Please register again.");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      await API.post("/auth/resend-code", {
+        email: String(email).trim().toLowerCase(),
+      });
+
+      setOtp(["", "", "", ""]);
+      setError("");
+      setSecondsLeft(56);
+      inputRefs.current[0]?.focus();
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const message =
+          error.response?.data?.msg ||
+          error.response?.data?.message ||
+          error.response?.data?.error ||
+          "Failed to resend code";
+
+        setError(message);
+      } else {
+        setError("Something went wrong");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const hasError = !!error;
@@ -206,44 +259,18 @@ export default function OtpScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-
-  background: {
-    flex: 1,
-  },
-
-  container: {
-    flex: 1,
-    paddingHorizontal: 28,
-    paddingTop: 14,
-  },
-
+  flex: { flex: 1 },
+  safeArea: { flex: 1, backgroundColor: "#FFFFFF" },
+  background: { flex: 1 },
+  container: { flex: 1, paddingHorizontal: 28, paddingTop: 14 },
   backButton: {
     width: 36,
     height: 36,
     justifyContent: "center",
     alignItems: "flex-start",
   },
-
-  content: {
-    flex: 1,
-    alignItems: "center",
-    paddingTop: 44,
-  },
-
-  logo: {
-    width: 72,
-    height: 72,
-    marginBottom: 20,
-  },
-
+  content: { flex: 1, alignItems: "center", paddingTop: 44 },
+  logo: { width: 72, height: 72, marginBottom: 20 },
   title: {
     fontSize: 22,
     fontWeight: "700",
@@ -251,7 +278,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 10,
   },
-
   subtitle: {
     width: "82%",
     fontSize: 12,
@@ -260,18 +286,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 28,
   },
-
-  otpRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 10,
-  },
-
-  otpGradientBorder: {
-    borderRadius: 10,
-    padding: 1,
-  },
-
+  otpRow: { flexDirection: "row", gap: 12, marginBottom: 10 },
+  otpGradientBorder: { borderRadius: 10, padding: 1 },
   otpInnerBox: {
     width: 34,
     height: 34,
@@ -280,7 +296,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-
   otpInput: {
     width: "100%",
     height: "100%",
@@ -290,11 +305,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     padding: 0,
   },
-
-  otpInputError: {
-    color: "#EF4444",
-  },
-
+  otpInputError: { color: "#EF4444" },
   errorText: {
     marginBottom: 12,
     fontSize: 11,
@@ -302,50 +313,30 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontWeight: "400",
   },
-
-  buttonWrapper: {
-    width: "100%",
-    marginTop: 2,
-  },
-
+  buttonWrapper: { width: "100%", marginTop: 2 },
   button: {
     height: 34,
     borderRadius: 999,
     justifyContent: "center",
     alignItems: "center",
   },
-
   buttonText: {
     fontSize: 12,
     fontWeight: "500",
     color: "#111111",
   },
-
   resendLabel: {
     marginTop: 10,
     fontSize: 11,
     color: "#A1A1AA",
     textAlign: "center",
   },
-
-  resendRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 3,
-  },
-
+  resendRow: { flexDirection: "row", alignItems: "center", marginTop: 3 },
   resendText: {
     fontSize: 11,
     color: "#8dc0f0",
     fontWeight: "500",
   },
-
-  resendActive: {
-    textDecorationLine: "underline",
-  },
-
-  timerText: {
-    fontSize: 11,
-    color: "#A1A1AA",
-  },
+  resendActive: { textDecorationLine: "underline" },
+  timerText: { fontSize: 11, color: "#A1A1AA" },
 });
