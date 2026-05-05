@@ -34,7 +34,11 @@ mongoose
     console.error('Database Connection Error', err);
   });
 
+<<<<<<< HEAD
 const PORT = process.env.PORT || 5000;
+=======
+const PORT = process.env.PORT|| 5000;
+>>>>>>> a7ab437612ae3b0265c997ca3ad522801c43bbe8
 
 app.listen(PORT, () => {
   console.log(`Server is moving on port ${PORT} 🚀`);

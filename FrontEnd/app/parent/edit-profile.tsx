@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -7,11 +7,14 @@ import {
   TextInput,
   Image,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
 import API from "../api";
 
 export default function EditProfileScreen() {
@@ -23,6 +26,8 @@ export default function EditProfileScreen() {
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
 
+  const emailRegex = useMemo(() => /^[^\s@]+@[^\s@]+\.[^\s@]+$/, []);
+
   const fetchProfile = async () => {
     try {
       setLoading(true);
@@ -30,12 +35,25 @@ export default function EditProfileScreen() {
 
       const response = await API.get("/auth/profile");
 
-      setName(response.data.fullName || "");
+      console.log("PROFILE DATA:", response.data);
+
+      setName(response.data.fullName || response.data.name || "");
       setEmail(response.data.email || "");
       setProfilePic(response.data.profilePic || "");
     } catch (err) {
       setError("Failed to load profile");
-      console.log("Edit profile error:", err);
+
+      if (axios.isAxiosError(err)) {
+        console.log("FETCH PROFILE ERROR:", {
+          message: err.message,
+          status: err.response?.status,
+          data: err.response?.data,
+          url: err.config?.url,
+          baseURL: err.config?.baseURL,
+        });
+      } else {
+        console.log("Unexpected fetch profile error:", err);
+      }
     } finally {
       setLoading(false);
     }
@@ -47,24 +65,79 @@ export default function EditProfileScreen() {
     }, [])
   );
 
-  const handleUpdateProfile = async () => {
+  const validateForm = () => {
     if (!name.trim()) {
       setError("Name is required");
-      return;
+      return false;
     }
+
+    if (name.trim().length < 3) {
+      setError("Name must be at least 3 characters");
+      return false;
+    }
+
+    if (!email.trim()) {
+      setError("Email is required");
+      return false;
+    }
+
+    if (!emailRegex.test(email.trim().toLowerCase())) {
+      setError("Please enter a valid email address");
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleUpdateProfile = async () => {
+    const isValid = validateForm();
+    if (!isValid) return;
 
     try {
       setUpdating(true);
       setError("");
 
-      await API.put("/auth/update-profile", {
+      const cleanEmail = email.trim().toLowerCase();
+
+      const response = await API.put("/auth/update-profile", {
         fullName: name.trim(),
+        email: cleanEmail,
       });
 
-      router.back();
+      console.log("UPDATE PROFILE SUCCESS:", response.data);
+
+      if (response.data?.user) {
+        await AsyncStorage.setItem("user", JSON.stringify(response.data.user));
+      }
+
+      Alert.alert("Success", "Profile updated successfully", [
+        {
+          text: "OK",
+          onPress: () => router.back(),
+        },
+      ]);
     } catch (err) {
-      setError("Failed to update profile");
-      console.log("Update profile error:", err);
+      if (axios.isAxiosError(err)) {
+        console.log("UPDATE PROFILE ERROR:", {
+          message: err.message,
+          status: err.response?.status,
+          data: err.response?.data,
+          url: err.config?.url,
+          baseURL: err.config?.baseURL,
+        });
+
+        const message =
+          err.response?.data?.msg ||
+          err.response?.data?.message ||
+          err.response?.data?.error ||
+          err.message ||
+          "Failed to update profile";
+
+        setError(message);
+      } else {
+        setError("Something went wrong");
+        console.log("Unexpected update profile error:", err);
+      }
     } finally {
       setUpdating(false);
     }
@@ -83,6 +156,7 @@ export default function EditProfileScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
+        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => router.back()}
@@ -95,6 +169,7 @@ export default function EditProfileScreen() {
           <Text style={styles.headerTitle}>Edit My Profile</Text>
         </View>
 
+        {/* Avatar */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarWrapper}>
             <Image
@@ -112,12 +187,16 @@ export default function EditProfileScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Form */}
         <View style={styles.form}>
           <View style={styles.inputBlock}>
             <Text style={styles.label}>Name</Text>
             <TextInput
               value={name}
-              onChangeText={setName}
+              onChangeText={(text) => {
+                setName(text);
+                if (error) setError("");
+              }}
               style={styles.input}
               placeholder="Enter your name"
               placeholderTextColor="#B0B0B0"
@@ -128,18 +207,23 @@ export default function EditProfileScreen() {
             <Text style={styles.label}>Email</Text>
             <TextInput
               value={email}
-              style={[styles.input, styles.disabledInput]}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (error) setError("");
+              }}
+              style={styles.input}
               placeholder="Enter your email"
               placeholderTextColor="#B0B0B0"
               keyboardType="email-address"
               autoCapitalize="none"
-              editable={false}
+              autoCorrect={false}
             />
           </View>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
         </View>
 
+        {/* Button */}
         <View style={styles.buttonWrapper}>
           <TouchableOpacity
             activeOpacity={0.9}
@@ -150,7 +234,7 @@ export default function EditProfileScreen() {
               colors={["#B9D8F6", "#FBC0BF"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
-              style={styles.updateButton}
+              style={[styles.updateButton, updating && styles.disabledButton]}
             >
               {updating ? (
                 <ActivityIndicator color="#222" />
@@ -217,6 +301,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 10,
+    overflow: "hidden",
   },
 
   avatar: {
@@ -257,11 +342,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
 
-  disabledInput: {
-    color: "#8E8E93",
-    backgroundColor: "#F7F7F8",
-  },
-
   errorText: {
     color: "#EF4444",
     fontSize: 13,
@@ -278,6 +358,10 @@ const styles = StyleSheet.create({
     borderRadius: 27,
     justifyContent: "center",
     alignItems: "center",
+  },
+
+  disabledButton: {
+    opacity: 0.7,
   },
 
   updateButtonText: {
