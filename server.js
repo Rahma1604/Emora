@@ -26,7 +26,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/doctor-chat', doctorChatRoutes);
 
 mongoose
-  .connect('mongodb://127.0.0.1:27017/emora')
+  .connect(process.env.MONGO_URI)
   .then(() => {
     console.log('MongoDB Connected Successfully');
   })
@@ -34,8 +34,8 @@ mongoose
     console.error('Database Connection Error', err);
   });
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, () => {
   console.log(`Server is moving on port ${PORT} 🚀`);
 });
