@@ -22,6 +22,46 @@ type Child = {
   gender: string;
 };
 
+// Static data for now - will be connected to backend later
+const STATIC_CHILD_DATA: Record<string, { status: string; description: string; lastUpdated: string; color: string }> = {};
+
+function getChildCardData(index: number) {
+  const cards = [
+    {
+      status: "Improving",
+      description: "Child shows slight improvement in emotional behavior",
+      lastUpdated: "May 12, 2026",
+      color: "#FBC0BF",
+    },
+    {
+      status: "Improving",
+      description: "Child appears calmer and more emotionally stable over time.",
+      lastUpdated: "May 15, 2026",
+      color: "#B9D8F6",
+    },
+    {
+      status: "Improving",
+      description: "Showing great progress in daily activities.",
+      lastUpdated: "May 10, 2026",
+      color: "#FBC0BF",
+    },
+    {
+      status: "Improving",
+      description: "Communication skills are developing well.",
+      lastUpdated: "May 8, 2026",
+      color: "#B9D8F6",
+    },
+  ];
+  return cards[index % cards.length];
+}
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "GOOD MORNING";
+  if (hour < 17) return "GOOD AFTERNOON";
+  return "GOOD EVENING";
+}
+
 export default function Home() {
   const [children, setChildren] = useState<Child[]>([]);
   const [userName, setUserName] = useState("User");
@@ -61,9 +101,12 @@ export default function Home() {
     }, [])
   );
 
+  const firstName = userName.split(" ")[0];
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
+        {/* Background gradient */}
         <View style={styles.topGradientWrapper}>
           <LinearGradient
             colors={[
@@ -76,7 +119,6 @@ export default function Home() {
             end={{ x: 1, y: 0 }}
             style={styles.topHorizontalGradient}
           />
-
           <LinearGradient
             colors={[
               "rgba(255,255,255,0)",
@@ -91,37 +133,44 @@ export default function Home() {
           />
         </View>
 
+        {/* Flower decoration top right */}
+        <Image
+          source={require("../../assets/images/images/flower.png")}
+          style={styles.flowerTopRight}
+          resizeMode="contain"
+        />
+
+        {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Image
               source={require("../../assets/images/images/image 119.png")}
               style={styles.profileImage}
             />
-
             <View>
               <Text style={styles.welcomeText}>Welcome 👋</Text>
               <Text style={styles.userName}>{userName}</Text>
             </View>
           </View>
-
           <TouchableOpacity style={styles.notificationButton}>
             <Feather name="bell" size={22} color="#222" />
           </TouchableOpacity>
         </View>
 
+        {/* Content */}
         <View style={styles.content}>
           {loading ? (
             <ActivityIndicator color="#222" />
           ) : error ? (
             <Text style={styles.errorText}>{error}</Text>
           ) : children.length === 0 ? (
+            // Empty state
             <>
               <Image
                 source={require("../../assets/images/images/child.png")}
                 style={styles.childImage}
                 resizeMode="contain"
               />
-
               <Text style={styles.emptyText}>
                 You haven't added any children yet. Tap the button
               </Text>
@@ -146,56 +195,84 @@ export default function Home() {
               </TouchableOpacity>
             </>
           ) : (
+            // Children list - new UI
             <ScrollView
               style={styles.childrenList}
               contentContainerStyle={styles.childrenListContent}
               showsVerticalScrollIndicator={false}
             >
-              <Text style={styles.sectionTitle}>Your Children</Text>
+              {/* Greeting */}
+              <Text style={styles.greetingSmall}>{getGreeting()}, {firstName.toUpperCase()}</Text>
+              <Text style={styles.greetingLarge}>
+                Everything is{" "}
+                <Text style={styles.greetingHighlight}>Serene</Text> at{"\n"}Home
+              </Text>
 
-              {children.map((child) => (
-                <View key={child._id} style={styles.childCard}>
-                  <View style={styles.childAvatar}>
-                    <Ionicons name="happy-outline" size={26} color="#222" />
-                  </View>
+              {/* Children Cards */}
+              {children.map((child, index) => {
+                const cardData = getChildCardData(index);
+                return (
+                  <TouchableOpacity
+                    key={child._id}
+                    activeOpacity={0.88}
+                    onPress={() => router.push("/parent/childProfile")}
+                    style={[styles.childCard, { backgroundColor: cardData.color }]}
+                  >
+                    {/* Flower pattern watermark */}
+                    <Image
+                      source={require("../../assets/images/images/Vector (1).png")}
+                      style={styles.cardFlower1}
+                      resizeMode="contain"
+                    />
+                    <Image
+                      source={require("../../assets/images/images/Vector (1).png")}
+                      style={styles.cardFlower2}
+                      resizeMode="contain"
+                    />
+                    <Image
+                      source={require("../../assets/images/images/Vector (1).png")}
+                      style={styles.cardFlower3}
+                      resizeMode="contain"
+                    />
+                    <View style={styles.childCardTop}>
+                      <View style={styles.statusBadge}>
+                        <Text style={styles.statusText}>{cardData.status} ✨</Text>
+                      </View>
+                    </View>
 
-                  <View style={styles.childInfo}>
-                    <Text style={styles.childName}>{child.name}</Text>
-                    <Text style={styles.childDetails}>
-                      Age: {child.age} • Gender: {child.gender}
+                    <Text style={styles.childCardName}>
+                      {child.name}{" "}
+                      <Text style={styles.childCardAge}>({child.age} years old)</Text>
                     </Text>
-                  </View>
-                </View>
-              ))}
 
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => router.push("/parent/add-child")}
-                style={styles.buttonWrapper}
-              >
-                <LinearGradient
-                  colors={["#B9D8F6", "#FBC0BF"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.addButton}
-                >
-                  <Text style={styles.addButtonText}>Add Another Child</Text>
-                </LinearGradient>
-              </TouchableOpacity>
+                    <Text style={styles.childCardDesc}>{cardData.description}</Text>
+
+                    <View style={styles.childCardBottom}>
+                      <Text style={styles.childCardDate}>Last updated: {cardData.lastUpdated}</Text>
+                      <TouchableOpacity style={styles.arrowButton}>
+                        <Ionicons name="arrow-forward" size={18} color="#222" />
+                      </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+
+              <View style={{ height: 100 }} />
             </ScrollView>
           )}
         </View>
 
+        {/* Bottom Nav */}
         <View style={styles.bottomNav}>
           <TouchableOpacity style={styles.navItem}>
             <Feather name="home" size={20} color="#222" />
             <Text style={[styles.navText, styles.activeNavText]}>Home</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.navItem}>
-            <Feather name="list" size={20} color="#999" />
-            <Text style={styles.navText}>History</Text>
-          </TouchableOpacity>
+         <TouchableOpacity style={styles.navItem} onPress={() => router.push("/parent/activity-history")}>
+  <Feather name="list" size={20} color="#999" />
+  <Text style={styles.navText}>History</Text>
+</TouchableOpacity>
 
           <TouchableOpacity
             style={styles.centerButtonWrapper}
@@ -242,11 +319,23 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 150,
+    height: 200,
     overflow: "hidden",
   },
   topHorizontalGradient: { ...StyleSheet.absoluteFillObject },
   topFadeGradient: { ...StyleSheet.absoluteFillObject },
+
+  flowerTopRight: {
+    position: "absolute",
+    top: 60,
+    right: -10,
+    width: 120,
+    height: 120,
+    opacity: 0.15,
+    zIndex: 0,
+    tintColor: "#B9D8F6",
+  },
+
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -275,6 +364,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   notificationButton: { padding: 6 },
+
   content: {
     flex: 1,
     alignItems: "center",
@@ -282,6 +372,8 @@ const styles = StyleSheet.create({
     paddingBottom: 70,
     zIndex: 2,
   },
+
+  // Empty state
   childImage: { width: 220, height: 220, marginBottom: 18 },
   emptyText: {
     fontSize: 13,
@@ -311,46 +403,120 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
   },
+
+  // Children list
   childrenList: { width: "100%" },
   childrenListContent: {
-    paddingTop: 40,
-    paddingBottom: 120,
+    paddingTop: 20,
+    paddingBottom: 20,
   },
-  sectionTitle: {
-    fontSize: 18,
+
+  greetingSmall: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#9A9A9A",
+    letterSpacing: 1,
+    marginBottom: 6,
+    marginTop: 8,
+  },
+  greetingLarge: {
+    fontSize: 26,
     fontWeight: "700",
     color: "#222",
-    marginBottom: 16,
+    lineHeight: 34,
+    marginBottom: 24,
   },
+  greetingHighlight: {
+    color: "#7BB8E8",
+  },
+
+  // Child card
   childCard: {
     width: "100%",
-    backgroundColor: "#F7F7F8",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 16,
+    overflow: "hidden",
   },
-  childAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#FFFFFF",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
+  cardFlower1: {
+    position: "absolute",
+    width: 60,
+    height: 60,
+    top: 10,
+    right: 60,
+    opacity: 0.2,
+    tintColor: "#fff",
   },
-  childInfo: { flex: 1 },
-  childName: {
-    fontSize: 15,
+  cardFlower2: {
+    position: "absolute",
+    width: 45,
+    height: 45,
+    bottom: 15,
+    right: 20,
+    opacity: 0.2,
+    tintColor: "#fff",
+  },
+  cardFlower3: {
+    position: "absolute",
+    width: 35,
+    height: 35,
+    top: 40,
+    right: 110,
+    opacity: 0.15,
+    tintColor: "#fff",
+  },
+  childCardTop: {
+    marginBottom: 8,
+  },
+  statusBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.55)",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#333",
+  },
+  childCardName: {
+    fontSize: 17,
     fontWeight: "700",
     color: "#222",
+    marginBottom: 6,
   },
-  childDetails: {
-    marginTop: 4,
+  childCardAge: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#444",
+  },
+  childCardDesc: {
+    fontSize: 13,
+    color: "#444",
+    lineHeight: 19,
+    marginBottom: 14,
+  },
+  childCardBottom: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  childCardDate: {
     fontSize: 12,
-    color: "#8D8D8D",
+    color: "#555",
+    fontWeight: "500",
   },
+  arrowButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // Bottom nav
   bottomNav: {
     position: "absolute",
     bottom: 12,
