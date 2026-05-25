@@ -1,2 +1,14 @@
-node_modules
+# === Node.js / Backend ===
+node_modules/
 .env
+
+# === AI / Python Virtual Environment ===
+.venv/
+venv/
+ENV/
+__pycache__/
+*.pyc
+
+# === AI Heavy Models & Test Data ===
+AI/image_modality/models/*.h5
+AI/image_modality/test/
