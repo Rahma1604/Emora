@@ -1,162 +1,289 @@
-# Emora – Multimodal Emotion Recognition System
+# 🧠 Emora – Multimodal Emotion Recognition System
 
 ## Overview
 
-Emora is an AI-powered multimodal emotion recognition system designed to analyze human emotions from different input modalities including text and facial images. The project combines Deep Learning models with an Expert System to provide emotion-aware responses and recommendations.
+Emora is an AI-powered multimodal emotion recognition system designed to analyze human emotions from three primary input modalities:
 
-The system aims to support mental health awareness by detecting emotional states and generating appropriate feedback based on the predicted emotion.
+* 📝 Text
+* 😊 Facial Images
+* 🎤 Voice
 
----
+The system combines state-of-the-art Deep Learning models with a Rule-Based Expert System to detect emotional states and provide personalized responses, emotional support, and mental health recommendations.
 
-## Features
-
-* Emotion Detection from Text
-* Emotion Detection from Facial Images
-* Arabic and English Language Support
-* Real-time Webcam Emotion Recognition
-* Expert System for Personalized Responses
-* Deep Learning-Based Classification
-* Multimodal Architecture
+The goal of Emora is to create an intelligent emotional assistant capable of understanding users through multiple communication channels while supporting both Arabic and English languages.
 
 ---
 
-## Technologies Used
+# ✨ Features
 
-### 1. Text & Voice Processing
-* **CAMel-BERT:** For high-accuracy Arabic and English text emotion classification.
-* **OpenAI Whisper (Local Base Model):** For robust Speech-to-Text (STT) transcription of bilingual audio inputs.
-* **TensorFlow / Keras** (or your specific NLP framework)
+### 📝 Emotion Detection from Text
 
-### 2. Image Processing
-* **ResNet50V2:** For facial expression feature extraction and classification.
-* **TensorFlow / Keras**
-* **OpenCV:** For face detection and real-time webcam frame processing.
+Analyzes text inputs and predicts the user's emotional state using Natural Language Processing techniques.
 
-### 3. Expert System & Tools
-* **Experta / Python:** For building the personalized mental health response rule engine.
-* **Development Environments:** PyCharm (Local Backend Implementation), Kaggle & Google Colab (Model Training), GitHub (Version Control).
+### 🎤 Emotion Detection from Voice
+
+Converts speech into text using Speech-to-Text technology, then performs emotion classification on the extracted text.
+
+### 😊 Emotion Detection from Facial Images
+
+Detects facial expressions from uploaded images or live webcam feeds and classifies emotions using Computer Vision.
+
+### 🌍 Arabic & English Support
+
+Supports bilingual emotion recognition for both Arabic and English users.
+
+### 🧩 Expert System Integration
+
+Provides personalized emotional feedback and recommendations based on the detected emotion.
+
+### 🤖 Deep Learning-Based Classification
+
+Uses advanced transformer and convolutional neural network architectures for high-accuracy predictions.
+
+### 🔄 Multimodal Architecture
+
+Allows emotion recognition from multiple data sources within a unified system.
 
 ---
-## Project Structure
 
+# 🛠 Technologies Used
+
+## Text & Voice Processing
+
+### CAMel-BERT
+
+Multilingual Transformer model used for emotion classification in Arabic and English text.
+
+### OpenAI Whisper
+
+Speech-to-Text model used for converting voice recordings into text before emotion analysis.
+
+### PyTorch
+
+Framework used for training and inference of NLP models.
+
+---
+
+## Image Processing
+
+### ResNet50V2
+
+Deep Convolutional Neural Network used for facial emotion recognition.
+
+### TensorFlow / Keras
+
+Framework used for training and deploying image classification models.
+
+### OpenCV
+
+Used for:
+
+* Face Detection
+* Image Processing
+* Real-Time Webcam Streaming
+
+---
+
+## Expert System
+
+### Experta
+
+Rule-Based Expert System used to generate personalized responses based on predicted emotions.
+
+---
+
+## Development Tools
+
+* Kaggle
+* Google Colab
+* PyCharm
+* GitHub
+* Vercel
+
+---
+
+# 😊 Supported Emotions
+
+The system currently supports the following emotion categories:
+
+| Emotion     | Description                |
+| ----------- | -------------------------- |
+| 😊 Happy    | Joy, Happiness, Excitement |
+| 😢 Sad      | Sadness, Loneliness        |
+| 😠 Angry    | Anger, Frustration         |
+| 😨 Fear     | Fear, Anxiety              |
+| 😐 Neutral  | Emotionally Neutral        |
+| 😮 Surprise | Surprise, Shock            |
+| 🤢 Disgust  | Disgust, Aversion          |
+
+---
+
+# 🔄 System Workflow
+
+## Text Emotion Recognition Pipeline
+
+```text
+User Text Input
+        │
+        ▼
+Text Preprocessing
+(Tokenization & Cleaning)
+        │
+        ▼
+CAMel-BERT
+        │
+        ▼
+Emotion Classification
+        │
+        ▼
+Expert System
+        │
+        ▼
+Personalized Response & Recommendation
+```
+
+---
+
+## Image Emotion Recognition Pipeline
+
+```text
+Image Input / Webcam Frame
+            │
+            ▼
+Face Detection
+(OpenCV)
+            │
+            ▼
+Face Preprocessing
+(Resize & Normalization)
+            │
+            ▼
+ResNet50V2
+            │
+            ▼
+Emotion Classification
+            │
+            ▼
+Expert System
+            │
+            ▼
+Personalized Response & Recommendation
+```
+
+---
+
+## Voice Emotion Recognition Pipeline
+
+```text
+Voice Input
+      │
+      ▼
+Speech-to-Text
+(OpenAI Whisper)
+      │
+      ▼
+Extracted Text
+      │
+      ▼
+Text Preprocessing (Tokenization & Cleaning)
+      │
+      ▼
+CAMel-BERT
+      │
+      ▼
+Emotion Classification
+      │
+      ▼
+Expert System
+      │
+      ▼
+Personalized Response & Recommendation
+```
+
+---
+
+## Complete System Architecture
+
+```text
+                ┌─────────────┐
+                │ User Input  │
+                └──────┬──────┘
+                       │
+       ┌───────────────┼───────────────┐
+       │               │               │
+       ▼               ▼               ▼
+     Text            Image          Voice
+       │               │               │
+       ▼               ▼               ▼
+  CAMel-BERT      ResNet50V2       Whisper
+       │               │               │
+       └───────────────┼───────────────┘
+                       │
+                       ▼
+             Emotion Classification
+                       │
+                       ▼
+                 Expert System
+                       │
+                       ▼
+       Personalized Feedback & Support
+```
+
+---
+
+# 📁 Project Structure
+
+```text
 Emora/
 │
-├── .expo/                # Expo configuration and build tools
-├── AI/                   # Python AI models, notebooks, and scripts
-├── config/               # System configuration files (Database, APIs, etc.)
-├── FrontEnd/             # Mobile / Web Frontend codebase
-├── middleware/           # Backend middleware functions (Auth, Validation, etc.)
-├── models/               # Database models / schemas
-├── routes/               # API endpoints & server routing
-├── .gitignore            # Git ignored files
-├── package.json          # Node.js project dependencies and scripts
-├── package-lock.json     # Locked dependency versions
-├── server.js             # Main backend server entry point
-├── tsconfig.json         # TypeScript configuration
-└── vercel.json           # Vercel deployment configurations
+├── .expo/                # Expo configuration and build files
+├── AI/                   # AI models, training notebooks, and inference scripts
+├── config/               # Configuration files
+├── FrontEnd/             # Mobile/Web frontend application
+├── middleware/           # Backend middleware functions
+├── models/               # Database models and schemas
+├── routes/               # API routes and endpoints
+├── .gitignore
+├── package.json
+├── package-lock.json
+├── server.js             # Backend server entry point
+├── tsconfig.json
+├── vercel.json
+└── README.md
+```
 
 ---
 
-## Emotion Categories
+# 🚀 Future Improvements
 
-The system currently supports the following emotions:
-
-* Happy
-* Sad
-* Angry
-* Fear
-* Neutral
-* Surprise
-* Disgust
-
----
-
-## Workflow
-
-### Text Pipeline
-
-Input Text
-
-↓
-
-Text Preprocessing
-
-↓
-
-CAMel-BERT
-
-↓
-
-Emotion Prediction
-
-↓
-
-Expert System Response
+* Advanced Multimodal Fusion Models
+* Attention-Based Feature Fusion
+* Enhanced Arabic Dialect Support
+* Personalized Mental Health Recommendation Engine
+* Continuous Learning System
+* Mobile Application Deployment
+* Web Application Deployment
+* Real-Time Emotion Monitoring
 
 ---
 
-### Image Pipeline
+# 👨‍💻 Team Project
 
-Input Image
+Graduation Project – Computer Science 2026
 
-↓
+This project integrates concepts from:
 
-Face Detection
-
-↓
-
-ResNet50V2
-
-↓
-
-Emotion Prediction
-
-↓
-
-Expert System Response
+* Software Development
+* Artificial Intelligence
+* Machine Learning
+* Deep Learning
+* Natural Language Processing
+* Computer Vision
+* Expert Systems
+* Human-Computer Interaction
 
 ---
 
-### Voice Pipeline
+# 📄 License
 
-Input Audio
-
-↓
-
-OpenAI Whisper (STT)
-
-↓
-
-Extracted Text
-
-↓
-
-CAMel-BERT
-
-↓
-
-Emotion Prediction
-
-↓
-
-Expert System Response
-
----
-
-## Future Improvements
-
-* Advanced Multimodal Fusion Module (Feature-Level Attention Mechanisms).
-* Deepening the Expert System's Clinical Recommendation Engine.
-* Fine-Tuned Arabic Dialect Support.
-* Full Cross-Platform Web and Mobile Application Deployment.
-
----
-
-## Team Project
-
-This project was developed as a Senior Graduation Project (Class of 2026), focusing on Artificial Intelligence, Software Development, Natural Language Processing (NLP), Computer Vision (CV), and Expert Systems.
----
-
-## License
-
-This project is developed for educational and research purposes.
+This project is developed for educational and research purposes only.
