@@ -4,7 +4,7 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
-const { uploadProfile } = require('../config/cloudinary');
+const { uploadProfile,uploadDoctorDocs } = require('../config/cloudinary');
 const { checkToken } = require('../middleware/authMiddleware');
 
 const transporter = nodemailer.createTransport({
@@ -14,7 +14,90 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS,
   },
 });
+router.post('/register-doctor', uploadDoctorDocs, async (req, res) => {
+  try {
+    const { 
+      fullName, 
+      email, 
+      password, 
+      confirmPassword,
+      nationalIdNumber, 
+      specialization,         
+      practiceLicenseNumber, 
+      syndicateRegistrationNumber, 
+      university,             
+      graduationYear, 
+      yearsOfExperience
+     } = req.body;
 
+    const cleanEmail = email.trim().toLowerCase();
+
+    const existingUser = await User.findOne({ email: cleanEmail });
+    if (existingUser) {
+      return res.status(400).json({
+        msg: 'Email already exists! Please use another email or login.',
+      });
+    }
+
+    const emailReal = /^[a-zA-Z0-9._%+-]+@(gmail|yahoo|icloud)\.com$/;
+    if (!emailReal.test(cleanEmail)) {
+      return res.status(400).json({ msg: 'please use right email' });
+    }
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({ msg: "Pass don't match" });
+    }
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    
+    const files = req.files || {};
+    const doctorDocuments = {
+      nationalIdFront: files['nationalIdFront'] ? files['nationalIdFront'][0].path : "",
+      nationalIdBack: files['nationalIdBack'] ? files['nationalIdBack'][0].path : "",
+      syndicateCardFront: files['syndicateCardFront'] ? files['syndicateCardFront'][0].path : "",
+      syndicateCardBack: files['syndicateCardBack'] ? files['syndicateCardBack'][0].path : "",
+      graduationCertificate: files['graduationCertificate'] ? files['graduationCertificate'][0].path : "",
+      specializationCertificate: files['specializationCertificate'] ? files['specializationCertificate'][0].path : "",
+      practiceLicense: files['practiceLicense'] ? files['practiceLicense'][0].path : "",
+      recentSelfie: files['recentSelfie'] ? files['recentSelfie'][0].path : "",
+     };
+
+    await transporter.sendMail({
+      from: '"Emora App"<202227086@std.sci.cu.edu.eg>',
+      to: cleanEmail,
+      subject: 'Application Received - Emora App',
+      text: `Hi Dr. ${fullName},\n\nThank you for registering with Emora. Your documents have been uploaded successfully and our team/AI is currently reviewing your application.\n\nWe will notify you as soon as your account is activated.`,
+    });
+
+    const newDoctor = new User({
+      fullName,
+      email: cleanEmail,
+      password: hashedPassword,
+      role: 'doctor', 
+      verificationStatus: 'pending',
+      isVerified: false, 
+      nationalIdNumber,
+      specialization,
+      practiceLicenseNumber,
+      syndicateRegistrationNumber,
+      university,
+      graduationYear: Number(graduationYear) || null,
+      yearsOfExperience: Number(yearsOfExperience) || 0,
+      doctorDocuments 
+    });
+
+    await newDoctor.save();
+
+    res.status(201).json({
+      status: 'PENDING_VERIFICATION',
+      message: 'Registration successful. Your application is under review.',
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 router.post('/register', async (req, res) => {
   try {
     const { fullName, email, password, confirmPassword, role } = req.body;
@@ -105,17 +188,28 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ msg: 'Not found' });
     }
 
-    if (!user.isVerified) {
-      return res.status(400).json({ msg: 'Please verify your email first' });
-    }
-
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
       return res.status(400).json({ msg: 'Wrong password' });
     }
+    
+    if (user.role === 'doctor') {
+     if (user.verificationStatus === 'pending') {
+        return res.status(202).json({ 
+          status: 'PENDING_VERIFICATION', 
+          msg: 'Your application is under review. Please wait for approval.' 
+        });
+      }
+      if (user.verificationStatus === 'rejected') {
+        return res.status(403).json({ msg: 'Your application was rejected.' });
+      }
+    }
 
-    const token = jwt.sign(
+    if (user.role === 'parent'&& !user.isVerified) {
+      return res.status(400).json({ msg: 'Please verify your email first' });
+    }
+   const token = jwt.sign(
       { id: user._id },
       process.env.JWT_SECRET,
       { expiresIn: '1d' }
@@ -127,11 +221,13 @@ router.post('/login', async (req, res) => {
         name: user.fullName,
         email: user.email,
         role: user.role,
+        verificationStatus: user.verificationStatus // إضافية: عشان الفرونت إند يعرف حالة الدكتور
       },
     });
   } catch (err) {
     res.status(500).json({ error: 'Login failed' });
   }
+
 });
 
 router.get('/profile', checkToken, async (req, res) => {
@@ -140,6 +236,7 @@ router.get('/profile', checkToken, async (req, res) => {
   } catch (error) {
     res.status(500).send('Server Error');
   }
+
 });
 
 router.put('/update-profile', checkToken, uploadProfile.single('profilePic'), async (req, res) => {

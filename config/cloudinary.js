@@ -2,6 +2,7 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const multer = require('multer');
 
+
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -23,4 +24,14 @@ const createStorage = (folderName,resourceType) => {
 const uploadProfile = multer({ storage: createStorage('Emora_Profiles', 'image') });
 const uploadDrawings = multer({ storage: createStorage('Emora_Children_Drawings', 'image') });
 const uploadVoices = multer({ storage: createStorage('Emora_Children_Voices', 'video') });
-module.exports = { cloudinary, uploadProfile, uploadDrawings ,uploadVoices};
+const uploadDoctorDocsStorage = createStorage('Emora_Doctor_Documents', 'image');
+const uploadDoctorDocs = multer({ storage: uploadDoctorDocsStorage }).fields([
+    { name: 'nationalIdFront', maxCount: 1 },
+    { name: 'nationalIdBack', maxCount: 1 },
+    { name: 'syndicateCardFront', maxCount: 1 },
+    { name: 'syndicateCardBack', maxCount: 1 },
+    { name: 'graduationCertificate', maxCount: 1 },
+    { name: 'practiceLicense', maxCount: 1 },
+    { name: 'recentSelfie', maxCount: 1 }
+]);
+module.exports = { cloudinary, uploadProfile, uploadDrawings ,uploadVoices,uploadDoctorDocs};

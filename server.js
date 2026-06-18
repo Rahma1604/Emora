@@ -8,7 +8,7 @@ const authRoutes = require('./routes/authRoutes');
 const childRoutes = require('./routes/childRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const doctorChatRoutes = require('./routes/doctorChatRoutes');
-
+const doctorRoutes = require('./routes/doctorRoutes');
 const app = express();
 
 app.use(cors());
@@ -24,6 +24,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/children', childRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/doctor-chat', doctorChatRoutes);
+app.use('/api/doctor', doctorRoutes);
+
 
 mongoose
   .connect(process.env.MONGO_URI)
