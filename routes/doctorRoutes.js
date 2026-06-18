@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const Case = require('../models/Case');
-const auth = require('../middleware/auth'); 
+const { checkToken } = require('../middleware/authMiddleware'); 
 
-router.get('/dashboard-stats', auth, async (req, res) => {
+router.get('/dashboard-stats', checkToken, async (req, res) => {
     try {
         const doctorId = req.user.id;
         const pendingCases = await Case.countDocuments({ doctorId, status: 'pending' });
@@ -26,7 +26,7 @@ router.get('/dashboard-stats', auth, async (req, res) => {
     }
 });
 
-router.get('/pending-cases', auth, async (req, res) => {
+router.get('/pending-cases', checkToken, async (req, res) => {
     try {
         const cases = await Case.find({ doctorId: req.user.id, status: 'pending' });
         res.json(cases);
@@ -34,7 +34,7 @@ router.get('/pending-cases', auth, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-router.get('/child-history/:childId', auth, async (req, res) => {
+router.get('/child-history/:childId', checkToken, async (req, res) => {
     try {
         const history = await Case.find({ 
             doctorId: req.user.id, 
@@ -46,7 +46,7 @@ router.get('/child-history/:childId', auth, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-router.get('/case-details/:caseId', auth, async (req, res) => {
+router.get('/case-details/:caseId', checkToken, async (req, res) => {
     try {
         const caseData = await Case.findById(req.params.caseId);
         if (!caseData) {
@@ -59,7 +59,7 @@ router.get('/case-details/:caseId', auth, async (req, res) => {
         res.status(500).json({ error: 'Server error while fetching case details' });
     }
 });
-router.put('/review-case/:caseId', auth, async (req, res) => {
+router.put('/review-case/:caseId', checkToken, async (req, res) => {
     try {
         const { doctorRecommendation } = req.body;
         const updatedCase = await Case.findByIdAndUpdate(
@@ -75,7 +75,7 @@ router.put('/review-case/:caseId', auth, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-router.get('/history', auth, async (req, res) => {
+router.get('/history',checkToken, async (req, res) => {
     try {
         const doctorId = req.user.id;
         const statusFilter = req.query.status; 
