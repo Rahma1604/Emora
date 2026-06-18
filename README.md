@@ -1,16 +1,14 @@
-# 🧠 Emora – Multimodal Emotion Recognition System
+# 🧠 Emora – Children's Neurodevelopment Support System
 
 ## Overview
 
-Emora is an AI-powered multimodal emotion recognition system designed to analyze human emotions from three primary input modalities:
+Emora is an AI-powered multimodal emotional and behavioral analysis system designed to help parents better understand their children's emotional and psychological well-being.
 
-* 📝 Text
-* 😊 Facial Images
-* 🎤 Voice
+The system analyzes multiple forms of child-generated content, including text messages, facial expressions, and voice recordings, to identify emotional patterns and provide meaningful insights into the child's emotional state.
 
-The system combines state-of-the-art Deep Learning models with a Rule-Based Expert System to detect emotional states and provide personalized responses, emotional support, and mental health recommendations.
+Using advanced Artificial Intelligence techniques, Emora combines Natural Language Processing (NLP), Computer Vision, Speech Processing, and Expert Systems to generate personalized reports, emotional indicators, and supportive recommendations for parents and specialists.
 
-The goal of Emora is to create an intelligent emotional assistant capable of understanding users through multiple communication channels while supporting both Arabic and English languages.
+The platform also enables continuous monitoring of a child's emotional development over time, allowing parents and professionals to track progress, identify potential concerns, and provide timely guidance while maintaining privacy and data security.
 
 ---
 
@@ -18,7 +16,7 @@ The goal of Emora is to create an intelligent emotional assistant capable of und
 
 ### 📝 Emotion Detection from Text
 
-Analyzes text inputs and predicts the user's emotional state using Natural Language Processing techniques.
+Analyzes text inputs and predicts emotional states using Natural Language Processing techniques.
 
 ### 🎤 Emotion Detection from Voice
 
@@ -28,13 +26,21 @@ Converts speech into text using Speech-to-Text technology, then performs emotion
 
 Detects facial expressions from uploaded images or live webcam feeds and classifies emotions using Computer Vision.
 
+### 📊 Emotional Progress Tracking
+
+Monitors emotional changes and behavioral patterns over time.
+
+### 📄 Reports & Summaries
+
+Generates emotional reports and summaries to support parents and specialists in understanding children's development.
+
 ### 🌍 Arabic & English Support
 
 Supports bilingual emotion recognition for both Arabic and English users.
 
 ### 🧩 Expert System Integration
 
-Provides personalized emotional feedback and recommendations based on the detected emotion.
+Provides personalized emotional feedback and recommendations based on detected emotions.
 
 ### 🤖 Deep Learning-Based Classification
 
@@ -42,7 +48,7 @@ Uses advanced transformer and convolutional neural network architectures for hig
 
 ### 🔄 Multimodal Architecture
 
-Allows emotion recognition from multiple data sources within a unified system.
+Allows emotion recognition from multiple data sources within a unified intelligent platform.
 
 ---
 
@@ -50,9 +56,9 @@ Allows emotion recognition from multiple data sources within a unified system.
 
 ## Text & Voice Processing
 
-### CAMel-BERT
+### CAMeL-BERT
 
-Multilingual Transformer model used for emotion classification in Arabic and English text.
+Transformer-based language model used for Arabic and English emotion classification.
 
 ### OpenAI Whisper
 
@@ -60,7 +66,7 @@ Speech-to-Text model used for converting voice recordings into text before emoti
 
 ### PyTorch
 
-Framework used for training and inference of NLP models.
+Deep Learning framework used for training and inference of NLP models.
 
 ---
 
@@ -88,7 +94,7 @@ Used for:
 
 ### Experta
 
-Rule-Based Expert System used to generate personalized responses based on predicted emotions.
+Rule-Based Expert System used to generate personalized responses and recommendations based on detected emotions.
 
 ---
 
@@ -103,8 +109,6 @@ Rule-Based Expert System used to generate personalized responses based on predic
 ---
 
 # 😊 Supported Emotions
-
-The system currently supports the following emotion categories:
 
 | Emotion     | Description                |
 | ----------- | -------------------------- |
@@ -130,7 +134,7 @@ Text Preprocessing
 (Tokenization & Cleaning)
         │
         ▼
-CAMel-BERT
+CAMeL-BERT
         │
         ▼
 Emotion Classification
@@ -185,10 +189,10 @@ Speech-to-Text
 Extracted Text
       │
       ▼
-Text Preprocessing (Tokenization & Cleaning)
+Text Preprocessing
       │
       ▼
-CAMel-BERT
+CAMeL-BERT
       │
       ▼
 Emotion Classification
@@ -215,7 +219,7 @@ Personalized Response & Recommendation
      Text            Image          Voice
        │               │               │
        ▼               ▼               ▼
-  CAMel-BERT      ResNet50V2       Whisper
+  CAMeL-BERT      ResNet50V2       Whisper
        │               │               │
        └───────────────┼───────────────┘
                        │
@@ -236,21 +240,50 @@ Personalized Response & Recommendation
 ```text
 Emora/
 │
-├── .expo/                # Expo configuration and build files
-├── AI/                   # AI models, training notebooks, and inference scripts
-├── config/               # Configuration files
-├── FrontEnd/             # Mobile/Web frontend application
-├── middleware/           # Backend middleware functions
-├── models/               # Database models and schemas
-├── routes/               # API routes and endpoints
+├── .expo/
+├── AI/
+├── config/
+├── FrontEnd/
+├── middleware/
+├── models/
+├── routes/
 ├── .gitignore
 ├── package.json
 ├── package-lock.json
-├── server.js             # Backend server entry point
+├── server.js
 ├── tsconfig.json
 ├── vercel.json
 └── README.md
 ```
+
+---
+
+# 🎯 Project Objectives
+
+* Help parents better understand their children's emotional well-being.
+* Detect emotions from text, voice, and facial expressions.
+* Track emotional development over time.
+* Generate reports and emotional summaries.
+* Assist specialists in reviewing cases and providing recommendations.
+* Maintain privacy and secure handling of user data.
+* Support early emotional awareness and intervention.
+
+---
+
+# 🎓 Academic Information
+
+Faculty of Science
+Cairo University
+
+Department of Mathematics
+Computer Science Program
+
+Graduation Project
+Academic Year 2025 – 2026
+
+Project Domain:
+
+**Children's Neurodevelopment Support**
 
 ---
 
@@ -268,8 +301,6 @@ Emora/
 ---
 
 # 👨‍💻 Team Project
-
-Graduation Project – Computer Science 2026
 
 This project integrates concepts from:
 
