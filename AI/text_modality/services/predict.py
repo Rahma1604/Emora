@@ -1,0 +1,113 @@
+# -*- coding: utf-8 -*-
+import os
+import re
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from arabert.preprocess import ArabertPreprocessor  # ✅ ضيفنا أرابيرت
+
+from AI.text_modality.utils.constants import CLASSES, CONF_THRESHOLD
+from AI.expert_system.emotion_rules import EmotionFact, EmoraExpertSystem
+
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+# ✅ عدلنا اسم الفولدر للاسم الجديد بتاع CAMeL-BERT
+MODEL_PATH = os.path.join(CURRENT_DIR, '..', 'models', 'emora_text_model_final')
+
+if not os.path.exists(MODEL_PATH):
+    raise FileNotFoundError(
+        f"\n⚠️  Text model not found at: {MODEL_PATH}"
+        f"\n   ➡️  Please place 'emora_camel_model_final/' folder inside AI/text_modality/models/"
+    )
+
+print("Loading Emora Text Model (CAMeL-BERT)...")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
+model.eval()
+
+# ✅ بنعرف الـ preprocessor للعربي
+arabert_prep = ArabertPreprocessor(model_name="bert-base-arabertv2")
+print("🎯 SUCCESS: CAMeL-BERT model loaded successfully! 🎉")
+
+
+def clean_text_arabic(text: str) -> str:
+    """تنظيف ذكي مخصص للعربي فقط عشان الموديل يفهم العامية صح."""
+    text = str(text).strip()
+    text = re.sub(r'http\S+|www\S+', '', text)
+    text = re.sub(r'@\w+|#\w+', '', text)
+
+    # تشغيل أرابيرت
+    text = arabert_prep.preprocess(text)
+    text = text.replace(" +", "").replace("+ ", "").replace("+", "")
+
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def predict_emotion_from_text(text: str):
+    """
+    تاخد نص وترجع الـ Emotion والـ Confidence.
+    مع صمامات أمان للـ Edge Cases في العربي والإنجليزي.
+    """
+    text_lower = text.lower().strip()
+
+    # 1️⃣ صمامات أمان للإنجليزي (الـ Slangs والـ Shortcuts)
+    # 1️⃣ صمامات أمان للإنجليزي (تعديل ذكي وشامل للـ Slangs والشتايم ومشتقاتها)
+    angry_slangs = [
+        "fuck", "shit", "bitch", "damn", "go to hell",
+        "asshole", "bastard", "dick", "piss off", "screw you",
+        "shut up", "idiot", "stupid", "hate you", "fucker"
+    ]
+    if any(word in text_lower for word in angry_slangs):
+        return "angry", 99.0
+
+    # صمامات أمان للحزن الشديد والاحباط
+    sad_phrases = ["dead inside", "hopeless", "kill myself", "suicidal", "want to die"]
+    if any(phrase in text_lower for phrase in sad_phrases):
+        return "sad", 95.0
+
+    # 2️⃣ صمامات أمان للعربي (تعديل لغبطة كلمات الحب الصريحة)
+    if any(word in text_lower for word in ["بحب", "أحب", "بحب اكل", "بعشق"]):
+        # لو الجملة مفيهاش كلام سلبي صريح، بنوجهها فوراً لـ happy
+        if not any(neg in text_lower for neg in ["مش", "مبقتش", "كرهت", "زعلان"]):
+            return "happy", 90.0
+
+    # حساب نسبة الحروف العربي للتأكد من اللغة
+    arabic_chars = sum(1 for c in text if '\u0600' <= c <= '\u06FF')
+
+    # لو النص عربي أو ميكس، نعديه على الـ Preprocessor بتاع أرابيرت
+    if arabic_chars > len(text) * 0.15:
+        cleaned_text = clean_text_arabic(text)
+    else:
+        # لو إنجليزي، تنظيف هادئ وسريع
+        cleaned_text = text_lower
+        cleaned_text = re.sub(r'http\S+|www\S+', '', cleaned_text)
+        cleaned_text = re.sub(r'@\w+|#\w+', '', cleaned_text)
+        cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+
+    inputs = tokenizer(
+        cleaned_text,
+        return_tensors='pt',
+        truncation=True,
+        max_length=64,
+        padding=True
+    )
+
+    with torch.no_grad():
+        probs = torch.softmax(model(**inputs).logits, dim=1)[0]
+
+    predicted_idx = torch.argmax(probs).item()
+    confidence = float(probs[predicted_idx]) * 100
+    predicted_emotion = CLASSES[predicted_idx]
+
+    if confidence < CONF_THRESHOLD:
+        print(f"\n[System Note]: Low confidence ({confidence:.2f}%). Defaulting to 'unknown'.")
+        predicted_emotion = 'unknown'
+        confidence = 0.0
+
+    return predicted_emotion, round(confidence, 2)
+
+def trigger_expert_system(emotion: str):
+    """تشغيل النظام الخبير وطباعة الرد المناسب."""
+    engine = EmoraExpertSystem()
+    engine.reset()
+    engine.declare(EmotionFact(emotion=emotion))
+    engine.run()

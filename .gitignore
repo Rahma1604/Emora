@@ -12,3 +12,4 @@ __pycache__/
 # === AI Heavy Models & Test Data ===
 AI/image_modality/models/*.h5
 AI/image_modality/test/
+AI/text_modality/models/emora_text_model_final
