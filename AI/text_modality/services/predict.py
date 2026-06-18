@@ -9,7 +9,6 @@ from AI.text_modality.utils.constants import CLASSES, CONF_THRESHOLD
 from AI.expert_system.emotion_rules import EmotionFact, EmoraExpertSystem
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-# ✅ عدلنا اسم الفولدر للاسم الجديد بتاع CAMeL-BERT
 MODEL_PATH = os.path.join(CURRENT_DIR, '..', 'models', 'emora_text_model_final')
 
 if not os.path.exists(MODEL_PATH):
@@ -49,8 +48,6 @@ def predict_emotion_from_text(text: str):
     """
     text_lower = text.lower().strip()
 
-    # 1️⃣ صمامات أمان للإنجليزي (الـ Slangs والـ Shortcuts)
-    # 1️⃣ صمامات أمان للإنجليزي (تعديل ذكي وشامل للـ Slangs والشتايم ومشتقاتها)
     angry_slangs = [
         "fuck", "shit", "bitch", "damn", "go to hell",
         "asshole", "bastard", "dick", "piss off", "screw you",
@@ -59,14 +56,11 @@ def predict_emotion_from_text(text: str):
     if any(word in text_lower for word in angry_slangs):
         return "angry", 99.0
 
-    # صمامات أمان للحزن الشديد والاحباط
     sad_phrases = ["dead inside", "hopeless", "kill myself", "suicidal", "want to die"]
     if any(phrase in text_lower for phrase in sad_phrases):
         return "sad", 95.0
 
-    # 2️⃣ صمامات أمان للعربي (تعديل لغبطة كلمات الحب الصريحة)
     if any(word in text_lower for word in ["بحب", "أحب", "بحب اكل", "بعشق"]):
-        # لو الجملة مفيهاش كلام سلبي صريح، بنوجهها فوراً لـ happy
         if not any(neg in text_lower for neg in ["مش", "مبقتش", "كرهت", "زعلان"]):
             return "happy", 90.0
 
@@ -106,7 +100,6 @@ def predict_emotion_from_text(text: str):
     return predicted_emotion, round(confidence, 2)
 
 def trigger_expert_system(emotion: str):
-    """تشغيل النظام الخبير وطباعة الرد المناسب."""
     engine = EmoraExpertSystem()
     engine.reset()
     engine.declare(EmotionFact(emotion=emotion))
