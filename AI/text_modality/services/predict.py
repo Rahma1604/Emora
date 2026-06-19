@@ -1,99 +1,256 @@
 # -*- coding: utf-8 -*-
+
 import os
 import re
 import torch
+
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from arabert.preprocess import ArabertPreprocessor
-from huggingface_hub import login
 
 from ..utils.constants import CLASSES, CONF_THRESHOLD
-from ...expert_system.emotion_rules import EmotionFact, EmoraExpertSystem
+from AI.expert_system.emotion_rules import EmotionFact, EmoraExpertSystem
 
-MODEL_REPO = "Emora-models/text-emotion-model"
-HF_TOKEN = os.getenv("HF_TOKEN")
 
-print("🔐 Authenticating with Hugging Face Hub...")
-if HF_TOKEN:
-    login(token=HF_TOKEN, add_to_git_credential=False)
-else:
-    print("⚠️ Warning: No HF_TOKEN found in Environment Variables!")
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-print("🔄 Loading Emora Text Model (CAMeL-BERT) from Hugging Face Hub...")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_REPO, token=HF_TOKEN)
-model = AutoModelForSequenceClassification.from_pretrained(MODEL_REPO, token=HF_TOKEN)
+MODEL_PATH = os.path.join(
+    CURRENT_DIR,
+    '..',
+    'models',
+    'emora_text_model_final'
+)
+
+
+print("Loading Emora Text Model (CAMel-BERT)...")
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+
+model = AutoModelForSequenceClassification.from_pretrained(
+    MODEL_PATH
+)
+
 model.eval()
 
-arabert_prep = ArabertPreprocessor(model_name="bert-base-arabertv2")
-print("🎯 SUCCESS: CAMeL-BERT model loaded from Hugging Face successfully! 🎉")
+print("🎯 SUCCESS: Text model loaded successfully! 🎉")
 
 
-def clean_text_arabic(text: str) -> str:
-    text = str(text).strip()
-    text = re.sub(r'http\S+|www\S+', '', text)
-    text = re.sub(r'@\w+|#\w+', '', text)
 
-    text = arabert_prep.preprocess(text)
-    text = text.replace(" +", "").replace("+ ", "").replace("+", "")
+def clean_text(text):
 
-    text = re.sub(r'\s+', ' ', text).strip()
+    text = str(text).lower().strip()
+
+    text = re.sub(
+        r'http\S+|www\S+',
+        '',
+        text
+    )
+
+    text = re.sub(
+        r'#\w+|@\w+',
+        '',
+        text
+    )
+
+    text = re.sub(
+        r'\s+',
+        ' ',
+        text
+    )
+
     return text
 
 
-def predict_emotion_from_text(text: str):
-    text_lower = text.lower().strip()
 
-    angry_slangs = [
-        "fuck", "shit", "bitch", "damn", "go to hell",
-        "asshole", "bastard", "dick", "piss off", "screw you",
-        "shut up", "idiot", "stupid", "hate you", "fucker"
+def keyword_boost(text):
+
+    boost = {
+        "happy": 0,
+        "sad": 0,
+        "angry": 0,
+        "fear": 0,
+        "surprise": 0
+    }
+
+
+    happy_words = [
+        "فرحان",
+        "فرحانة",
+        "مبسوط",
+        "مبسوطة",
+        "سعيد",
+        "سعيدة",
+        "سعادة",
+        "فرحت",
+        "مبسوط",
+        "مبسوطه",
+        "بحب",
+        "جميل",
+        "رائع",
+        "نجحت",
+        "كسبت",
+        "happy",
+        "great",
+        "wonderful",
+        "glad",
+        "love"
     ]
-    if any(word in text_lower for word in angry_slangs):
-        return "angry", 99.0
 
-    sad_phrases = ["dead inside", "hopeless", "kill myself", "suicidal", "want to die"]
-    if any(phrase in text_lower for phrase in sad_phrases):
-        return "sad", 95.0
 
-    if any(word in text_lower for word in ["بحب", "أحب", "بحب اكل", "بعشق"]):
-        if not any(neg in text_lower for neg in ["مش", "مبقتش", "كرهت", "زعلان"]):
-            return "happy", 90.0
+    sad_words = [
+        "زعلان",
+        "حزين",
+        "وحيد",
+        "لوحدي",
+        "بعيط",
+        "اعيط",
+        "مخنوق",
+        "تعبت",
+        "مش عايز اتكلم",
+        "sad",
+        "alone",
+        "lonely"
+    ]
 
-    # حساب نسبة الحروف العربي للتأكد من اللغة
-    arabic_chars = sum(1 for c in text if '\u0600' <= c <= '\u06FF')
 
-    if arabic_chars > len(text) * 0.15:
-        cleaned_text = clean_text_arabic(text)
-    else:
-        cleaned_text = text_lower
-        cleaned_text = re.sub(r'http\S+|www\S+', '', cleaned_text)
-        cleaned_text = re.sub(r'@\w+|#\w+', '', cleaned_text)
-        cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+    angry_words = [
+        "غاضب",
+        "متعصب",
+        "اتخنقت",
+        "بكره",
+        "كرهت",
+        "هضرب",
+        "مستفز",
+        "angry",
+        "mad",
+        "hate",
+        "fuck",
+        "shit"
+    ]
+
+
+    fear_words = [
+        "خايف",
+        "خفت",
+        "مرعوب",
+        "قلقان",
+        "مش آمن",
+        "scared",
+        "afraid",
+        "fear"
+    ]
+
+
+    for w in happy_words:
+        if w in text:
+            boost["happy"] += 3
+
+
+    for w in sad_words:
+        if w in text:
+            boost["sad"] += 3
+
+
+    for w in angry_words:
+        if w in text:
+            boost["angry"] += 3
+
+
+    for w in fear_words:
+        if w in text:
+            boost["fear"] += 3
+
+
+    return boost
+
+
+
+def predict_emotion_from_text(text: str):
+
+    cleaned = clean_text(text)
+
 
     inputs = tokenizer(
-        cleaned_text,
-        return_tensors='pt',
+        cleaned,
+        return_tensors="pt",
         truncation=True,
-        max_length=64,
+        max_length=128,
         padding=True
     )
 
-    with torch.no_grad():
-        probs = torch.softmax(model(**inputs).logits, dim=1)[0]
 
-    predicted_idx = torch.argmax(probs).item()
-    confidence = float(probs[predicted_idx]) * 100
-    predicted_emotion = CLASSES[predicted_idx]
+    with torch.no_grad():
+
+        logits = model(**inputs).logits
+
+        probs = torch.softmax(
+            logits,
+            dim=1
+        )[0]
+
+
+
+    scores = {
+        emotion: float(prob)
+        for emotion, prob in zip(CLASSES, probs)
+    }
+
+
+    boosts = keyword_boost(cleaned)
+
+
+
+    for emotion, value in boosts.items():
+
+        scores[emotion] += value / 100
+
+
+
+    total = sum(scores.values())
+
+    for k in scores:
+        scores[k] /= total
+
+
+
+    print("\n📊 All Probabilities:")
+
+    for emotion in CLASSES:
+
+        print(
+            f"{emotion:<10}: {scores[emotion]*100:.2f}%"
+        )
+
+
+    emotion = max(
+        scores,
+        key=scores.get
+    )
+
+
+    confidence = scores[emotion] * 100
+
+
 
     if confidence < CONF_THRESHOLD:
-        print(f"\n[System Note]: Low confidence ({confidence:.2f}%). Defaulting to 'unknown'.")
-        predicted_emotion = 'unknown'
-        confidence = 0.0
 
-    return predicted_emotion, round(confidence, 2)
+        emotion = "neutral"
 
 
-def trigger_expert_system(emotion: str):
+
+    return emotion, round(confidence,2)
+
+
+
+
+def trigger_expert_system(emotion):
+
     engine = EmoraExpertSystem()
+
     engine.reset()
-    engine.declare(EmotionFact(emotion=emotion))
+
+    engine.declare(
+        EmotionFact(
+            emotion=emotion
+        )
+    )
+
     engine.run()

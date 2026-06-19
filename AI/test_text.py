@@ -4,7 +4,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'AI'))
 
-from AI.text_modality.services.predict import (
+from text_modality.services.predict import (
     predict_emotion_from_text,
     trigger_expert_system
 )
