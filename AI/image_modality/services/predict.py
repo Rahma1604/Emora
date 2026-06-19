@@ -10,11 +10,9 @@ from ..utils.preprocess import preprocess_frame
 from ..utils.constants import CLASS_NAMES, CONF_THRESHOLD
 from ...expert_system.emotion_rules import EmotionFact, EmoraExpertSystem
 
-# 🛠️ إعدادات Hugging Face (بدون توكن صريح عشان جيت هب ما يعملش بلوك)
 REPO_ID = "Emora-models/face-emotion-model"
 FILENAME = "emora_pure_weights.weights.h5"
 
-# بيقرأ التوكن الخفي من السيستم
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 print("🔐 Authenticating with Hugging Face Hub...")

@@ -9,10 +9,8 @@ from huggingface_hub import login
 from ..utils.constants import CLASSES, CONF_THRESHOLD
 from ...expert_system.emotion_rules import EmotionFact, EmoraExpertSystem
 
-# 🛠️ إعدادات Hugging Face (بدون توكن صريح عشان جيت هب ما يعملش بلوك)
 MODEL_REPO = "Emora-models/text-emotion-model"
 
-# بيقرأ التوكن الخفي من السيستم
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 print("🔐 Authenticating with Hugging Face Hub...")
