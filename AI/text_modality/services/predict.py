@@ -6,16 +6,20 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from arabert.preprocess import ArabertPreprocessor
 from huggingface_hub import login
 
-
 from ..utils.constants import CLASSES, CONF_THRESHOLD
 from ...expert_system.emotion_rules import EmotionFact, EmoraExpertSystem
 
-
-HF_TOKEN = "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"
+# 🛠️ إعدادات Hugging Face (بدون توكن صريح عشان جيت هب ما يعملش بلوك)
 MODEL_REPO = "Emora-models/text-emotion-model"
 
+# بيقرأ التوكن الخفي من السيستم
+HF_TOKEN = os.getenv("HF_TOKEN")
+
 print("🔐 Authenticating with Hugging Face Hub...")
-login(token=HF_TOKEN, add_to_git_credential=False)
+if HF_TOKEN:
+    login(token=HF_TOKEN, add_to_git_credential=False)
+else:
+    print("⚠️ Warning: No HF_TOKEN found in Environment Variables!")
 
 print("🔄 Loading Emora Text Model (CAMeL-BERT) from Hugging Face Hub...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_REPO, token=HF_TOKEN)
@@ -39,7 +43,6 @@ def clean_text_arabic(text: str) -> str:
 
 
 def predict_emotion_from_text(text: str):
-
     text_lower = text.lower().strip()
 
     angry_slangs = [
