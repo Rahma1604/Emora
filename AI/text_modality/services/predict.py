@@ -10,7 +10,6 @@ from ..utils.constants import CLASSES, CONF_THRESHOLD
 from ...expert_system.emotion_rules import EmotionFact, EmoraExpertSystem
 
 MODEL_REPO = "Emora-models/text-emotion-model"
-
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 print("🔐 Authenticating with Hugging Face Hub...")
