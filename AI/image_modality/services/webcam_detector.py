@@ -8,8 +8,8 @@ from .predict import predict_emotion_from_frame, trigger_expert_system
 def run_webcam():
 
     print("\n🎥 Opening Webcam...")
-    print("   → Press 'q' to quit")
-    print("   → Press 'e' to freeze last frame & trigger Expert System\n")
+    print("   → Press 'q' or 'Q' to quit")
+    print("   → Press 'e' or 'E' to freeze last frame & trigger Expert System\n")
 
     cap = cv2.VideoCapture(0)
 
@@ -61,18 +61,14 @@ def run_webcam():
             frame
         )
 
+
         key = cv2.waitKey(1) & 0xFF
 
-        # =========================
-        # Quit
-        # =========================
-        if key == ord('q'):
+        if key == ord('q') or key == ord('Q') or key == 27:
+            print("\n👋 Quit signal received. Closing webcam...")
             break
 
-        # =========================
-        # Freeze + Expert System
-        # =========================
-        elif key == ord('e'):
+        elif key == ord('e') or key == ord('E'):
 
             if last_emotion is None:
                 print("\n⚠️ No emotion detected yet!")
@@ -80,16 +76,11 @@ def run_webcam():
 
             print(f"\n🧠 Freezing frame with emotion: {last_emotion}")
 
-            # حفظ آخر frame
             frozen_frame = frame.copy()
-
-            # قفل الكاميرا والنافذة
             cap.release()
             cv2.destroyAllWindows()
 
             print("\n📤 Sending data to Expert System...")
-
-            # إرسال الإيموشن (ممكن لاحقًا تبعتي frozen_frame كمان)
             trigger_expert_system(last_emotion)
 
             print("\n✅ Expert System triggered successfully.")
