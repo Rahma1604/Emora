@@ -46,6 +46,10 @@ Provides personalized emotional feedback and recommendations based on detected e
 
 Uses advanced transformer and convolutional neural network architectures for high-accuracy predictions.
 
+### ☁️ Cloud-Based AI Inference
+
+AI models are deployed on Hugging Face and accessed through secure APIs, enabling scalable and efficient emotion prediction.
+
 ### 🔄 Multimodal Architecture
 
 Allows emotion recognition from multiple data sources within a unified intelligent platform.
@@ -56,9 +60,9 @@ Allows emotion recognition from multiple data sources within a unified intellige
 
 ## Text & Voice Processing
 
-### CAMeL-BERT
+### CAMeL-BERT (Hosted on Hugging Face)
 
-Transformer-based language model used for Arabic and English emotion classification.
+Fine-tuned transformer model deployed on Hugging Face for Arabic and English emotion classification.
 
 ### OpenAI Whisper
 
@@ -72,9 +76,9 @@ Deep Learning framework used for training and inference of NLP models.
 
 ## Image Processing
 
-### ResNet50V2
+### ResNet50V2 (Hosted on Hugging Face)
 
-Deep Convolutional Neural Network used for facial emotion recognition.
+Fine-tuned convolutional neural network deployed on Hugging Face for facial emotion recognition.
 
 ### TensorFlow / Keras
 
@@ -87,6 +91,14 @@ Used for:
 * Face Detection
 * Image Processing
 * Real-Time Webcam Streaming
+
+---
+
+## Model Deployment & Serving
+
+### Hugging Face
+
+Used for hosting, managing, and serving trained AI models through secure Inference APIs.
 
 ---
 
@@ -134,7 +146,8 @@ Text Preprocessing
 (Tokenization & Cleaning)
         │
         ▼
-CAMeL-BERT
+Hugging Face API
+(CAMeL-BERT)
         │
         ▼
 Emotion Classification
@@ -162,7 +175,8 @@ Face Preprocessing
 (Resize & Normalization)
             │
             ▼
-ResNet50V2
+Hugging Face API
+(ResNet50V2)
             │
             ▼
 Emotion Classification
@@ -192,7 +206,8 @@ Extracted Text
 Text Preprocessing
       │
       ▼
-CAMeL-BERT
+Hugging Face API
+(CAMeL-BERT)
       │
       ▼
 Emotion Classification
@@ -209,28 +224,55 @@ Personalized Response & Recommendation
 ## Complete System Architecture
 
 ```text
-                ┌─────────────┐
-                │ User Input  │
-                └──────┬──────┘
-                       │
-       ┌───────────────┼───────────────┐
-       │               │               │
-       ▼               ▼               ▼
-     Text            Image          Voice
-       │               │               │
-       ▼               ▼               ▼
-  CAMeL-BERT      ResNet50V2       Whisper
-       │               │               │
-       └───────────────┼───────────────┘
-                       │
-                       ▼
+                 ┌─────────────┐
+                 │ User Input  │
+                 └──────┬──────┘
+                        │
+        ┌───────────────┼───────────────┐
+        │               │               │
+        ▼               ▼               ▼
+      Text            Image          Voice
+        │               │               │
+        ▼               ▼               ▼
+    Hugging Face     Hugging Face      Whisper
+    (CAMeL-BERT)     (ResNet50V2)
+        │               │               │
+        └───────────────┼───────────────┘
+                        │
+                        ▼
              Emotion Classification
-                       │
-                       ▼
-                 Expert System
-                       │
-                       ▼
-       Personalized Feedback & Support
+                        │
+                        ▼
+                  Expert System
+                        │
+                        ▼
+      Personalized Feedback & Support
+```
+
+---
+
+## Backend Deployment Flow
+
+```text
+User Input
+     │
+     ▼
+Frontend Application
+     │
+     ▼
+Backend API (Node.js)
+     │
+     ▼
+Hugging Face Inference API
+     │
+     ▼
+Emotion Prediction
+     │
+     ▼
+Expert System
+     │
+     ▼
+Reports & Recommendations
 ```
 
 ---
@@ -273,12 +315,15 @@ Emora/
 # 🎓 Academic Information
 
 Faculty of Science
+
 Cairo University
 
 Department of Mathematics
+
 Computer Science Program
 
 Graduation Project
+
 Academic Year 2025 – 2026
 
 Project Domain:
@@ -297,6 +342,8 @@ Project Domain:
 * Mobile Application Deployment
 * Web Application Deployment
 * Real-Time Emotion Monitoring
+* Federated Learning for Privacy Preservation
+* Advanced Behavioral Analytics Dashboard
 
 ---
 
