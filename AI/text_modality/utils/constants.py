@@ -2,4 +2,4 @@
 
 CLASSES = ['angry', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 
-CONF_THRESHOLD = 10.0
+CONF_THRESHOLD = 15.0
