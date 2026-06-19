@@ -46,10 +46,6 @@ Provides personalized emotional feedback and recommendations based on detected e
 
 Uses advanced transformer and convolutional neural network architectures for high-accuracy predictions.
 
-### ☁️ Cloud-Based AI Inference
-
-AI models are deployed on Hugging Face and accessed through secure APIs, enabling scalable and efficient emotion prediction.
-
 ### 🔄 Multimodal Architecture
 
 Allows emotion recognition from multiple data sources within a unified intelligent platform.
@@ -60,9 +56,9 @@ Allows emotion recognition from multiple data sources within a unified intellige
 
 ## Text & Voice Processing
 
-### CAMeL-BERT (Hosted on Hugging Face)
+### CAMeL-BERT
 
-Fine-tuned transformer model deployed on Hugging Face for Arabic and English emotion classification.
+Transformer-based language model used for Arabic and English emotion classification.
 
 ### OpenAI Whisper
 
@@ -76,9 +72,9 @@ Deep Learning framework used for training and inference of NLP models.
 
 ## Image Processing
 
-### ResNet50V2 (Hosted on Hugging Face)
+### ResNet50V2
 
-Fine-tuned convolutional neural network deployed on Hugging Face for facial emotion recognition.
+Deep Convolutional Neural Network used for facial emotion recognition.
 
 ### TensorFlow / Keras
 
@@ -91,14 +87,6 @@ Used for:
 * Face Detection
 * Image Processing
 * Real-Time Webcam Streaming
-
----
-
-## Model Deployment & Serving
-
-### Hugging Face
-
-Used for hosting, managing, and serving trained AI models through secure Inference APIs.
 
 ---
 
@@ -120,19 +108,38 @@ Rule-Based Expert System used to generate personalized responses and recommendat
 
 ---
 
-# 😊 Supported Emotions
+# 😊 Supported Emotions & Emotional Indicators
 
-| Emotion     | Description                |
-| ----------- | -------------------------- |
-| 😊 Happy    | Joy, Happiness, Excitement |
-| 😢 Sad      | Sadness, Loneliness        |
-| 😠 Angry    | Anger, Frustration         |
-| 😨 Fear     | Fear, Anxiety              |
-| 😐 Neutral  | Emotionally Neutral        |
-| 😮 Surprise | Surprise, Shock            |
-| 🤢 Disgust  | Disgust, Aversion          |
+| Emotion     | Description                | Possible Child Indicators / Associated Conditions                                           | Interpretation                                                            |
+| ----------- | -------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 😊 Happy    | Joy, Happiness, Excitement | Positive mood, confidence, enjoyment, good social interaction                               | Child appears emotionally healthy, comfortable, and in a positive state   |
+| 😐 Neutral  | Emotionally Neutral        | Calm behavior, emotional balance, normal daily activities                                   | Child appears stable and emotionally okay                                 |
+| 😢 Sad      | Sadness, Loneliness        | Withdrawal, crying, low motivation, loneliness, loss of interest                            | May indicate emotional distress, sadness, or need for emotional support   |
+| 😠 Angry    | Anger, Frustration         | Irritability, aggression, frustration, emotional outbursts, difficulty controlling emotions | May indicate stress, frustration, or emotional regulation difficulties    |
+| 😨 Fear     | Fear, Anxiety              | Worry, nervousness, avoidance, insecurity, excessive concern                                | May indicate anxiety, fear-related responses, or feeling unsafe           |
+| 😮 Surprise | Surprise, Shock            | Sudden reactions, confusion, unexpected emotional response                                  | Usually a temporary emotional reaction depending on context               |
+| 🤢 Disgust  | Disgust, Aversion          | Rejection, discomfort, negative reactions, avoidance                                        | May indicate dislike, discomfort, or negative response toward a situation |
 
 ---
+
+# 🧩 Expert System Integration
+
+The system uses an Expert System to analyze detected emotions and generate personalized emotional feedback and recommendations.
+
+The recommendations are based on:
+
+* Detected emotional state
+* Emotional patterns over time
+* Possible behavioral indicators
+
+Example:
+
+* Happy / Neutral → Child appears emotionally stable and in a good condition.
+* Sad → System may suggest emotional support and monitoring of mood changes.
+* Angry → System may suggest calming strategies and understanding possible frustration causes.
+* Fear → System may suggest providing reassurance and identifying possible anxiety triggers.
+* Surprise / Disgust → System evaluates the context before generating recommendations.
+
 
 # 🔄 System Workflow
 
@@ -146,8 +153,7 @@ Text Preprocessing
 (Tokenization & Cleaning)
         │
         ▼
-Hugging Face API
-(CAMeL-BERT)
+CAMeL-BERT
         │
         ▼
 Emotion Classification
@@ -175,8 +181,7 @@ Face Preprocessing
 (Resize & Normalization)
             │
             ▼
-Hugging Face API
-(ResNet50V2)
+ResNet50V2
             │
             ▼
 Emotion Classification
@@ -206,8 +211,7 @@ Extracted Text
 Text Preprocessing
       │
       ▼
-Hugging Face API
-(CAMeL-BERT)
+CAMeL-BERT
       │
       ▼
 Emotion Classification
@@ -224,55 +228,28 @@ Personalized Response & Recommendation
 ## Complete System Architecture
 
 ```text
-                 ┌─────────────┐
-                 │ User Input  │
-                 └──────┬──────┘
-                        │
-        ┌───────────────┼───────────────┐
-        │               │               │
-        ▼               ▼               ▼
-      Text            Image          Voice
-        │               │               │
-        ▼               ▼               ▼
-    Hugging Face     Hugging Face      Whisper
-    (CAMeL-BERT)     (ResNet50V2)
-        │               │               │
-        └───────────────┼───────────────┘
-                        │
-                        ▼
+                ┌─────────────┐
+                │ User Input  │
+                └──────┬──────┘
+                       │
+       ┌───────────────┼───────────────┐
+       │               │               │
+       ▼               ▼               ▼
+     Text            Image          Voice
+       │               │               │
+       ▼               ▼               ▼
+  CAMeL-BERT      ResNet50V2       Whisper
+       │               │               │
+       └───────────────┼───────────────┘
+                       │
+                       ▼
              Emotion Classification
-                        │
-                        ▼
-                  Expert System
-                        │
-                        ▼
-      Personalized Feedback & Support
-```
-
----
-
-## Backend Deployment Flow
-
-```text
-User Input
-     │
-     ▼
-Frontend Application
-     │
-     ▼
-Backend API (Node.js)
-     │
-     ▼
-Hugging Face Inference API
-     │
-     ▼
-Emotion Prediction
-     │
-     ▼
-Expert System
-     │
-     ▼
-Reports & Recommendations
+                       │
+                       ▼
+                 Expert System
+                       │
+                       ▼
+       Personalized Feedback & Support
 ```
 
 ---
@@ -315,15 +292,12 @@ Emora/
 # 🎓 Academic Information
 
 Faculty of Science
-
 Cairo University
 
 Department of Mathematics
-
 Computer Science Program
 
 Graduation Project
-
 Academic Year 2025 – 2026
 
 Project Domain:
@@ -342,8 +316,6 @@ Project Domain:
 * Mobile Application Deployment
 * Web Application Deployment
 * Real-Time Emotion Monitoring
-* Federated Learning for Privacy Preservation
-* Advanced Behavioral Analytics Dashboard
 
 ---
 
@@ -364,4 +336,4 @@ This project integrates concepts from:
 
 # 📄 License
 
-This project is developed for educational and research purposes only.
+This project is developed for educational and research purposes only. لو عايزة اعدل دي و اعمل ان الموديلز على اuggin face
