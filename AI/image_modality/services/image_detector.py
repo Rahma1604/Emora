@@ -3,8 +3,7 @@ import os
 import cv2
 
 # ✅ Relative imports
-from .predict import predict_emotion_from_frame, trigger_expert_system
-
+from AI.image_modality.services.predict import predict_emotion_from_frame, trigger_expert_system
 
 def detect_image(image_path=None):
 

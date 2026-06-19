@@ -3,37 +3,34 @@ import os
 import re
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from arabert.preprocess import ArabertPreprocessor  # ✅ ضيفنا أرابيرت
+from arabert.preprocess import ArabertPreprocessor
+from huggingface_hub import login
 
-from AI.text_modality.utils.constants import CLASSES, CONF_THRESHOLD
-from AI.expert_system.emotion_rules import EmotionFact, EmoraExpertSystem
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(CURRENT_DIR, '..', 'models', 'emora_text_model_final')
+from ..utils.constants import CLASSES, CONF_THRESHOLD
+from ...expert_system.emotion_rules import EmotionFact, EmoraExpertSystem
 
-if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(
-        f"\n⚠️  Text model not found at: {MODEL_PATH}"
-        f"\n   ➡️  Please place 'emora_camel_model_final/' folder inside AI/text_modality/models/"
-    )
 
-print("Loading Emora Text Model (CAMeL-BERT)...")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-model = AutoModelForSequenceClassification.from_pretrained(MODEL_PATH)
+HF_TOKEN = "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"
+MODEL_REPO = "Emora-models/text-emotion-model"
+
+print("🔐 Authenticating with Hugging Face Hub...")
+login(token=HF_TOKEN, add_to_git_credential=False)
+
+print("🔄 Loading Emora Text Model (CAMeL-BERT) from Hugging Face Hub...")
+tokenizer = AutoTokenizer.from_pretrained(MODEL_REPO, token=HF_TOKEN)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_REPO, token=HF_TOKEN)
 model.eval()
 
-# ✅ بنعرف الـ preprocessor للعربي
 arabert_prep = ArabertPreprocessor(model_name="bert-base-arabertv2")
-print("🎯 SUCCESS: CAMeL-BERT model loaded successfully! 🎉")
+print("🎯 SUCCESS: CAMeL-BERT model loaded from Hugging Face successfully! 🎉")
 
 
 def clean_text_arabic(text: str) -> str:
-    """تنظيف ذكي مخصص للعربي فقط عشان الموديل يفهم العامية صح."""
     text = str(text).strip()
     text = re.sub(r'http\S+|www\S+', '', text)
     text = re.sub(r'@\w+|#\w+', '', text)
 
-    # تشغيل أرابيرت
     text = arabert_prep.preprocess(text)
     text = text.replace(" +", "").replace("+ ", "").replace("+", "")
 
@@ -42,10 +39,7 @@ def clean_text_arabic(text: str) -> str:
 
 
 def predict_emotion_from_text(text: str):
-    """
-    تاخد نص وترجع الـ Emotion والـ Confidence.
-    مع صمامات أمان للـ Edge Cases في العربي والإنجليزي.
-    """
+
     text_lower = text.lower().strip()
 
     angry_slangs = [
@@ -67,11 +61,9 @@ def predict_emotion_from_text(text: str):
     # حساب نسبة الحروف العربي للتأكد من اللغة
     arabic_chars = sum(1 for c in text if '\u0600' <= c <= '\u06FF')
 
-    # لو النص عربي أو ميكس، نعديه على الـ Preprocessor بتاع أرابيرت
     if arabic_chars > len(text) * 0.15:
         cleaned_text = clean_text_arabic(text)
     else:
-        # لو إنجليزي، تنظيف هادئ وسريع
         cleaned_text = text_lower
         cleaned_text = re.sub(r'http\S+|www\S+', '', cleaned_text)
         cleaned_text = re.sub(r'@\w+|#\w+', '', cleaned_text)
@@ -98,6 +90,7 @@ def predict_emotion_from_text(text: str):
         confidence = 0.0
 
     return predicted_emotion, round(confidence, 2)
+
 
 def trigger_expert_system(emotion: str):
     engine = EmoraExpertSystem()
