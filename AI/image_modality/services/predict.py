@@ -40,7 +40,6 @@ def predict_emotion_from_frame(frame):
         predicted_emotion = CLASS_NAMES[predicted_idx]
         confidence = 100 * predictions[0][predicted_idx]
 
-        # 🔥 Smart Confidence Threshold
         if confidence < CONF_THRESHOLD:
             print(f"\n[System Note]: Low confidence ({confidence:.2f}% → {predicted_emotion}). Defaulting to 'unknown'.")
             predicted_emotion = 'unknown'
