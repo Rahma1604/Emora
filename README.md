@@ -336,4 +336,4 @@ This project integrates concepts from:
 
 # 📄 License
 
-This project is developed for educational and research purposes only. لو عايزة اعدل دي و اعمل ان الموديلز على اuggin face
+This project is developed for educational and research purposes only. 
