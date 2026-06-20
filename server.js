@@ -9,11 +9,13 @@ const childRoutes = require('./routes/childRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const doctorChatRoutes = require('./routes/doctorChatRoutes');
 const doctorRoutes = require('./routes/doctorRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
+app.use('/api/ai', aiRoutes);
 
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
@@ -25,6 +27,7 @@ app.use('/api/children', childRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/doctor-chat', doctorChatRoutes);
 app.use('/api/doctor', doctorRoutes);
+
 
 
 mongoose
