@@ -10,4 +10,4 @@ CLASS_NAMES = [
     'surprise'
 ]
 
-CONF_THRESHOLD = 40.0
+CONF_THRESHOLD = 20.0
