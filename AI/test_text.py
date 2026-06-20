@@ -10,18 +10,22 @@ from text_modality.services.predict import (
 )
 
 print("=" * 50)
-print("🧠 EMORA TEXT MODALITY")
+print("🧠 EMORA TEXT MODALITY - TESTING MODE")
 print("=" * 50)
 print()
+
 while True:
     text = input(
-        #"🧠 Emora:\n"
         "Hello! I'm here to understand how you're feeling.\n"
         "مرحباً! أنا هنا عشان أفهم شعورك.\n"
         "💬 Your message | رسالتك: "
     )
     if text.lower() == "exit":
+        print("👋 Exiting testing mode...")
         break
+
+    if not text.strip():
+        continue
 
     emotion, conf = predict_emotion_from_text(text)
 
@@ -30,3 +34,4 @@ while True:
 
     print("\nExpert System Response:")
     trigger_expert_system(emotion)
+    print("=" * 50 + "\n")
