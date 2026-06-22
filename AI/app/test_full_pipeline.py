@@ -6,7 +6,7 @@ AI_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if AI_DIR not in sys.path:
     sys.path.insert(0, AI_DIR)
 
-print("\n⏳ جاري تحميل NLP + Image models...")
+#print("\n⏳ جاري تحميل NLP + Image models...")
 from AI.text_modality.services.predict  import predict_emotion_from_text
 from AI.image_modality.services.predict import predict_emotion_from_frame
 from AI.expert_system.tracker_service   import (
@@ -14,16 +14,16 @@ from AI.expert_system.tracker_service   import (
     run_diagnostic_engine,
     generate_mother_report, generate_doctor_report,
 )
-print("✅ NLP + Image جاهزين!\n")
+#print("✅ NLP + Image جاهزين!\n")
 
 _whisper_ready = False
 
 def _ensure_whisper():
     global _whisper_ready
     if not _whisper_ready:
-        print("⏳ جاري تحميل Whisper (أول مرة بس)...")
-        import voice_modality.services.speech_to_text  # يشغّل load_model
-        _whisper_ready = True
+       # print("⏳ جاري تحميل Whisper (أول مرة بس)...")
+        import AI.voice_modality.services.speech_to_text
+       # _whisper_ready = True
         print("✅ Whisper جاهز!")
 
 SEP  = "─" * 58
@@ -32,7 +32,7 @@ SEP2 = "═" * 58
 
 
 def handle_text() -> tuple[str, str]:
-    text = input("  ✏️  اكتب كلام الطفل: ").strip()
+    text = input("  ✏️  اكتب يومك النهاردة مشي ازاي علشان نحلله سوا: ").strip()
     if not text:
         return "neutral", ""
     emotion, conf = predict_emotion_from_text(text)
@@ -42,13 +42,13 @@ def handle_text() -> tuple[str, str]:
 
 def handle_image() -> tuple[str, str]:
     import cv2
-    print("  📷 هيفتح الكاميرا — اضغط SPACE للتقاط | ESC للإلغاء")
+    print("  📷 دلوقتي هنفتح الكاميرا — اضغط SPACE للتقاط | ESC للإلغاء")
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("  ⚠️  مش قادر يفتح الكاميرا — هيسجل neutral")
-        return "neutral", ""
+        print("  ⚠️  مش قادر تفتح الكاميرا النهاردة! — هسجل unknown")
+        return "unknown", ""
 
-    emotion = "neutral"
+    emotion = "unknown"
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -60,7 +60,7 @@ def handle_image() -> tuple[str, str]:
             print(f"  📷 Vision  →  {emotion}  ({conf:.1f}%)")
             break
         elif key == 27:    # ESC
-            print("  ↩️  تم الإلغاء — هيسجل neutral")
+            print("  ↩️  تم الإلغاء — هيسجل unknown")
             break
 
     cap.release()
@@ -164,8 +164,8 @@ def main():
         elif choice == "3": emotion, text = handle_voice()
         elif choice == "4": emotion, text = handle_text_and_image()
         else:
-            print("  ⚠️  اختيار غير صحيح — هيسجل neutral")
-            emotion, text = "neutral", ""
+            print("  ⚠️  اختيار غير صحيح — هيسجل unknown")
+            emotion, text = "unknown", ""
 
         data      = _get_child(child_id)
         fake_date = f"2026-06-{day:02d}"

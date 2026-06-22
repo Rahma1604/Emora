@@ -354,6 +354,7 @@ def generate_mother_report(diagnostic_result: dict, child_name: str,
         "sad": "حزن", "fear": "خوف", "angry": "غضب",
         "happy": "سعادة", "neutral": "هدوء",
         "disgust": "اشمئزاز", "surprise": "مفاجأة",
+        "unknown":"لم يتم التحديد",
     }.get(dominant, dominant)
 
     return {
