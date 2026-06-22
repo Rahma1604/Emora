@@ -22,7 +22,7 @@ def _ensure_whisper():
     global _whisper_ready
     if not _whisper_ready:
         print("⏳ جاري تحميل Whisper (أول مرة بس)...")
-        import voice_modality.services.speech_to_text  # يشغّل load_model
+        import AI.voice_modality.services.speech_to_text
         _whisper_ready = True
         print("✅ Whisper جاهز!")
 
@@ -32,7 +32,7 @@ SEP2 = "═" * 58
 
 
 def handle_text() -> tuple[str, str]:
-    text = input("  ✏️  اكتب كلام الطفل: ").strip()
+    text = input("  ✏️  اكتب يومك مشي ازاي علشان نحلله سوا: ").strip()
     if not text:
         return "neutral", ""
     emotion, conf = predict_emotion_from_text(text)
@@ -42,13 +42,13 @@ def handle_text() -> tuple[str, str]:
 
 def handle_image() -> tuple[str, str]:
     import cv2
-    print("  📷 هيفتح الكاميرا — اضغط SPACE للتقاط | ESC للإلغاء")
+    print("  📷 دلوقتي هنفتح الكاميرا — اضغط SPACE للتقاط | ESC للإلغاء")
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
-        print("  ⚠️  مش قادر يفتح الكاميرا — هيسجل neutral")
-        return "neutral", ""
+        print("  ⚠️  مش قادر تفتح الكاميرا النهاردة! — هسجل unknown")
+        return "unknown", ""
 
-    emotion = "neutral"
+    emotion = "unknown"
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -60,7 +60,7 @@ def handle_image() -> tuple[str, str]:
             print(f"  📷 Vision  →  {emotion}  ({conf:.1f}%)")
             break
         elif key == 27:    # ESC
-            print("  ↩️  تم الإلغاء — هيسجل neutral")
+            print("  ↩️  تم الإلغاء — هيسجل unknown")
             break
 
     cap.release()
