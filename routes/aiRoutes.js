@@ -1,3 +1,10 @@
+/*
+1- Mn el str 80 llstr 114 : 3bara 3n enna bna5of list of analyses ely rag3a mn Python w bnghz kul analyse blshkl el monaseb l MongoDB
+34an MongoDB yrbot el analyse bl child w el case w el user w b3dha y3mlhom save f collection "Analysis".
+
+2- Mn 118 ela 123 : b3d ma el backend y3ml save ll analyses ely fe MongoDB birg3 nfs el saved results ely f response birg3ha ll frontend 2w Postman b2a.
+*/
+
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
@@ -6,6 +13,7 @@ const FormData = require('form-data');
 const fs = require('fs');
 const mongoose = require('mongoose');
 const Case = require('../models/Case');
+const Analysis = require('../models/Analysis'); // To import the model we create to use it inside aiRoutes.js
 const { checkToken } = require('../middleware/authMiddleware');
 
 const upload = multer({ dest: 'uploads/' });
@@ -70,12 +78,48 @@ router.post('/analyze', checkToken, upload.single('file'), async (req, res) => {
             { upsert: true, new: true }
         );
 
+        const aiAnalyses = Array.isArray(aiResponse.data.analyses)
+            ? aiResponse.data.analyses
+            : [];
+
+        const analysesToSave = aiAnalyses.map((analysis) => ({
+            childId: new mongoose.Types.ObjectId(child_id),
+            caseId: updatedCase._id,
+            createdBy: req.user._id,
+
+            modality: analysis.modality,
+
+            emotion: String(
+                analysis.emotion || 'unknown'
+            ).toLowerCase(),
+
+            confidence: Number(analysis.confidence) || 0,
+
+            content: analysis.content || '',
+
+            fileUrl: '',
+
+            contexts: Array.isArray(analysis.contexts)
+                ? analysis.contexts
+                : [],
+
+            isReliable: analysis.isReliable === true,
+
+            rawResult: analysis
+        }));
+
+        const savedAnalyses = analysesToSave.length > 0
+            ? await Analysis.insertMany(analysesToSave)
+            : [];
+
+
         fs.unlinkSync(file.path);
 
         res.status(200).json({
-            status: "success",
-            case: updatedCase,
-            message: "Analysis processed and case updated successfully"
+        status: "success",
+        case: updatedCase,
+        analyses: savedAnalyses,
+        message: "Analysis processed and saved successfully"
         });
 
     } catch (error) {
