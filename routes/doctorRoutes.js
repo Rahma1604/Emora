@@ -55,6 +55,7 @@ router.get('/case-details/:caseId', checkToken, async (req, res) => {
             aiDiagnosis: caseData.aiDiagnosis,
             aiSummary: caseData.aiSummary,
             status: caseData.status,
+            childProgress: caseData.childProgress,
             doctorRecommendation: caseData.doctorRecommendation
         });
         
@@ -81,6 +82,7 @@ router.get('/child-overview/:childId', checkToken, async (req, res) => {
             emotionalTrend: latestCase.emotionalTrend,
             mostFrequentEmotions: latestCase.frequentEmotions, 
             analysisTimeline: latestCase.analysisTimeline, 
+           childProgress: latestCase.childProgress,
             doctorRecommendations: latestCase.doctorRecommendations, 
             recurringPatterns: latestCase.recurringPatterns
         });

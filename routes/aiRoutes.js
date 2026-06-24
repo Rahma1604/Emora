@@ -34,6 +34,16 @@ router.post('/analyze', checkToken, upload.single('file'), async (req, res) => {
         if (percentage >= 75) priority = 'High';
         else if (percentage >= 40) priority = 'Medium';
 
+        let existingCase = await Case.findOne({ childId: new mongoose.Types.ObjectId(child_id), doctorId });
+        
+        let progress = 'no enough data yet';
+        if (existingCase && existingCase.entriesCount >= 1) {
+            const diff = percentage - (existingCase.emotionPercentage || 0);
+            if (diff < -5) progress = 'improving';
+            else if (diff > 5) progress = 'needs attention';
+            else progress = 'stable';
+        }
+
         const updatedCase = await Case.findOneAndUpdate(
             { 
                 childId: new mongoose.Types.ObjectId(child_id), 
@@ -46,6 +56,7 @@ router.post('/analyze', checkToken, upload.single('file'), async (req, res) => {
                     dominantEmotion: aiResponse.data.text_analysis?.emotion || "غير محدد",
                     emotionPercentage: percentage,
                     priority: priority,
+                    childProgress: progress,
                     lastAnalysisDate: new Date()
                 },
                 $inc: { entriesCount: 1 },
