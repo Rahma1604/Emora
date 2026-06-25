@@ -130,6 +130,17 @@ const ReportSchema = new mongoose.Schema(
 
       dominantEmotion: {
         type: String,
+        enum: [
+          "angry",
+          "disgust",
+          "fear",
+          "happy",
+          "neutral",
+          "sad",
+          "surprise",
+          "unknown",
+          "mixed",
+        ],
         default: "unknown",
       },
 
@@ -175,7 +186,8 @@ const ReportSchema = new mongoose.Schema(
 
     overallStatus: {
       type: String,
-      default: "unknown",
+      enum: ["stable", "improving", "needs_attention", "insufficient_data"],
+      required: true,
     },
   },
   {
