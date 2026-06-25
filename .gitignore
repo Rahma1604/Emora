@@ -14,3 +14,7 @@ AI/image_modality/models/*.h5
 AI/image_modality/test/
 AI/text_modality/models/emora_camel_model_prod_v5
 AI/app/recorded.wav
+
+# For Python libraries
+.venv/
+.venv-ai/
