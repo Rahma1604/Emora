@@ -1,10 +1,13 @@
 /*
-Hna el file da 5as bl API endpoints of reports w bi7dd shkl el reports hit3mlha save ezay gwa MongoDB 
+- Hna el file da 5as bl API endpoints of reports w bi7dd shkl el reports hit3mlha save ezay gwa MongoDB 
 Mn el 2khr y3ne da el mas2ol 3n el user request w tnfez process el report.
+- Gbna el child w el case w n3ml validation enhom mazboten mn na7yt kul 7aga b2a.
+- Gbna lul el analyses bta3t child mo3ain f fatra zmania mo3ina ely el user 25tarha.
 */
 
 const express = require("express");
 const mongoose = require("mongoose");
+<<<<<<< Updated upstream
 const axios = require("axios");
 
 const { checkToken } = require("../middleware/authMiddleware");
@@ -103,6 +106,16 @@ const normalizeConfidence = (value) => {
   return Math.min(100, Math.max(0, confidence));
 };
 
+=======
+
+const router = express.Router();
+
+const { checkToken } = require("../middleware/authMiddleware");
+const Child = require("../models/Child");
+const Case = require("../models/Case");
+const Analysis = require("../models/Analysis");
+
+>>>>>>> Stashed changes
 router.post("/generate", checkToken, async (req, res) => {
   try {
     const { childId, startDate, endDate } = req.body;
@@ -119,19 +132,59 @@ router.post("/generate", checkToken, async (req, res) => {
       });
     }
 
+<<<<<<< Updated upstream
     const startOfPeriod = parseReportDate(startDate);
 
+=======
+    const parseReportDate = (value, useEndOfDay = false) => {
+      const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value);
+
+      if (!match) {
+        return null;
+      }
+
+      const day = Number(match[1]);
+      const month = Number(match[2]);
+      const year = Number(match[3]);
+
+      const date = new Date(
+        Date.UTC(
+          year,
+          month - 1,
+          day,
+          useEndOfDay ? 23 : 0,
+          useEndOfDay ? 59 : 0,
+          useEndOfDay ? 59 : 0,
+          useEndOfDay ? 999 : 0,
+        ),
+      );
+
+      const isValidDate =
+        date.getUTCFullYear() === year &&
+        date.getUTCMonth() === month - 1 &&
+        date.getUTCDate() === day;
+
+      return isValidDate ? date : null;
+    };
+
+    const startOfPeriod = parseReportDate(startDate);
+>>>>>>> Stashed changes
     const endOfPeriod = parseReportDate(endDate, true);
 
     if (!startOfPeriod || !endOfPeriod) {
       return res.status(400).json({
+<<<<<<< Updated upstream
         message: "Dates must use the YYYY-MM-DD format",
+=======
+        message: "Dates must use the DD-MM-YYYY format",
+>>>>>>> Stashed changes
       });
     }
 
     if (startOfPeriod > endOfPeriod) {
       return res.status(400).json({
         message: "startDate must be before or equal to endDate",
+<<<<<<< Updated upstream
       });
     }
 
@@ -356,10 +409,76 @@ router.post("/generate", checkToken, async (req, res) => {
           : null,
         caseId: reportIdentity.caseId ? reportIdentity.caseId.toString() : null,
       },
+=======
+      });
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      startOfPeriod.setUTCHours(0, 0, 0, 0);
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+      endOfPeriod.setUTCHours(23, 59, 59, 999);
+    }
+
+    const child = await Child.findById(childId);
+
+    if (!child) {
+      return res.status(404).json({
+        message: "Child not found",
+      });
+    }
+
+    let hasChildAccess = false;
+    let linkedCase = null;
+
+    if (req.user.role === "parent") {
+      hasChildAccess =
+        child.parentId && child.parentId.toString() === req.user._id.toString();
+    }
+
+    if (req.user.role === "doctor") {
+      linkedCase = await Case.findOne({
+        childId: child._id,
+        doctorId: req.user._id,
+      });
+
+      hasChildAccess = Boolean(linkedCase);
+    }
+
+    if (!hasChildAccess) {
+      return res.status(403).json({
+        message: "You are not authorized to access this child report",
+      });
+    }
+
+    const analyses = await Analysis.find({
+      childId: child._id,
+      createdAt: {
+        $gte: startOfPeriod,
+        $lte: endOfPeriod,
+      },
+    })
+      .sort({ createdAt: 1 })
+      .lean();
+
+    if (analyses.length === 0) {
+      return res.status(404).json({
+        message: "No analyses found for the selected period",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Analyses retrieved successfully",
+      childId: child._id,
+      caseId: linkedCase?._id || null,
+      analysisCount: analyses.length,
+>>>>>>> Stashed changes
       period: {
         startDate: startOfPeriod,
         endDate: endOfPeriod,
       },
+<<<<<<< Updated upstream
       analysisCount: analyses.length,
       statistics,
       analyses: analysesForReport,
@@ -522,6 +641,14 @@ router.get("/child/:childId", checkToken, async (req, res) => {
 
     return res.status(500).json({
       message: "Failed to retrieve child reports",
+=======
+    });
+  } catch (error) {
+    console.error("Report validation error:", error);
+
+    return res.status(500).json({
+      message: "Failed to validate report request",
+>>>>>>> Stashed changes
     });
   }
 });
