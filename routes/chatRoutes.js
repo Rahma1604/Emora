@@ -3,6 +3,19 @@ const router=express.Router();
 const Chat=require('../models/Chat');
 const {checkToken}=require('../middleware/authMiddleware');
 const { uploadDrawings, uploadVoices } = require('../config/cloudinary');
+const axios = require('axios');
+
+async function getAIReply(userText) {
+    try {
+        const response = await axios.post('http://127.0.0.1:8000/chat', {
+            message: userText 
+        });
+        return response.data.reply;
+    } catch (error) {
+        console.error("AI Chat Error:", error);
+        return "أهلاً بك، أنا هنا لدعمك.. كيف يمكنني مساعدتك اليوم؟";
+    }
+}
 
 const chatUpload = (req, res, next) => {
     const type = req.query.type;
@@ -13,17 +26,16 @@ const chatUpload = (req, res, next) => {
     }
 };
 
-router.post('/send',checkToken,chatUpload,async(req,res)=>{
-    try{
-        const {childId,text,attachmentType}=req.body;
-        let chat=await Chat.findOne({parentId: req.user._id, childId});
-        if(!chat){
-            chat=new Chat({parentId:req.user._id,childId,messages:[]});
-    }
-
-let fileUrl = (req.files && req.files.length > 0) ? req.files[0].path : null;
-
-const parentMsg = {
+router.post('/send', checkToken, chatUpload, async (req, res) => {
+    try {
+        const { childId, text, attachmentType } = req.body;
+    
+        let chat = await Chat.findOne({ parentId: req.user._id, childId });
+        if (!chat) {
+            chat = new Chat({ parentId: req.user._id, childId, messages: [] });
+        }
+        let fileUrl = (req.files && req.files.length > 0) ? req.files[0].path : null;
+        chat.messages.push({
             sender: 'parent',
             text: text || "",
             attachment: {
@@ -31,21 +43,17 @@ const parentMsg = {
                 fileUrl: fileUrl
             },
             createdAt: new Date()
-        };
 
-        chat.messages.push(parentMsg);
-        let aiResponseText = "أنا أحلل رسالتك الآن...";
-        if (fileUrl) {
-            aiResponseText = attachmentType === 'voice' 
-                ? "سمعت الريكورد وجاري تحليله..." 
-                : "وصلتني الرسمة، جاري تحليلها...";
-        }
+        });
+      const aiResponseText = await getAIReply(text || "أرسل ملفاً");
 
-    chat.messages.push({sender:'ai',text: aiResponseText,createdAt: new Date()});
-    await chat.save();
-    res.status(200).json({message:"Message sent successfully",chat});
-    }catch(err){
-        res.status(500).json({error:"Failed to send message"});
+
+        chat.messages.push({ sender: 'ai', text: aiResponseText, createdAt: new Date() });
+        await chat.save();
+        
+        res.status(200).json({ message: "Message sent", chat });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to send message" });
     }
 });
 router.delete('/:childId', checkToken, async (req, res) => {
