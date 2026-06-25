@@ -10,10 +10,32 @@ const ReportSchema = new mongoose.Schema(
       required: true,
     },
 
+    childName: {
+      type: String,
+      required: true,
+    },
+
+    parentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+
     caseId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Case",
       default: null,
+    },
+
+    doctorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    doctorName: {
+      type: String,
+      default: "Not assigned",
     },
 
     requestedBy: {

@@ -92,8 +92,7 @@ router.post("/generate", checkToken, async (req, res) => {
 
     if (req.user.role === "parent") {
       hasChildAccess =
-        child.parentId &&
-        child.parentId.toString() === req.user._id.toString();
+        child.parentId && child.parentId.toString() === req.user._id.toString();
     }
 
     if (req.user.role === "doctor") {
@@ -126,6 +125,119 @@ router.post("/generate", checkToken, async (req, res) => {
         message: "No analyses found for the selected period",
       });
     }
+
+    const modalityCounts = {
+      text: 0,
+      image: 0,
+      voice: 0,
+    };
+
+    const emotionCounts = {
+      angry: 0,
+      disgust: 0,
+      fear: 0,
+      happy: 0,
+      neutral: 0,
+      sad: 0,
+      surprise: 0,
+      unknown: 0,
+    };
+
+    let totalConfidence = 0;
+    let reliableCount = 0;
+    let unreliableCount = 0;
+
+    const patternCounts = {};
+
+    analyses.forEach((analysis) => {
+      const modality = String(analysis.modality || "").toLowerCase();
+
+      if (Object.prototype.hasOwnProperty.call(modalityCounts, modality)) {
+        modalityCounts[modality] += 1;
+      }
+
+      const receivedEmotion = String(
+        analysis.emotion || "unknown",
+      ).toLowerCase();
+
+      const emotion = Object.prototype.hasOwnProperty.call(
+        emotionCounts,
+        receivedEmotion,
+      )
+        ? receivedEmotion
+        : "unknown";
+
+      emotionCounts[emotion] += 1;
+
+      const confidence = Number(analysis.confidence);
+
+      if (Number.isFinite(confidence)) {
+        totalConfidence += Math.min(100, Math.max(0, confidence));
+      }
+
+      if (analysis.isReliable === true) {
+        reliableCount += 1;
+      } else {
+        unreliableCount += 1;
+      }
+
+      const contexts = Array.isArray(analysis.contexts)
+        ? analysis.contexts
+        : [];
+
+      contexts.forEach((context) => {
+        const normalizedContext = String(context || "")
+          .trim()
+          .toLowerCase();
+
+        if (normalizedContext) {
+          patternCounts[normalizedContext] =
+            (patternCounts[normalizedContext] || 0) + 1;
+        }
+      });
+    });
+
+    const averageConfidence = Number(
+      (totalConfidence / analyses.length).toFixed(2),
+    );
+
+    const sortedEmotions = Object.entries(emotionCounts).sort(
+      (firstEmotion, secondEmotion) => {
+        return secondEmotion[1] - firstEmotion[1];
+      },
+    );
+
+    let dominantEmotion = "unknown";
+
+    if (sortedEmotions[0][1] > 0) {
+      const highestEmotionCount = sortedEmotions[0][1];
+
+      const mostFrequentEmotions = sortedEmotions.filter(
+        ([, count]) => count === highestEmotionCount,
+      );
+
+      dominantEmotion =
+        mostFrequentEmotions.length === 1
+          ? mostFrequentEmotions[0][0]
+          : "mixed";
+    }
+
+    const recurringPatterns = Object.entries(patternCounts)
+      .filter(([, count]) => count > 1)
+      .sort((firstPattern, secondPattern) => {
+        return secondPattern[1] - firstPattern[1];
+      })
+      .map(([pattern]) => pattern);
+
+    const statistics = {
+      modalityCounts,
+      emotionCounts,
+      dominantEmotion,
+      averageConfidence,
+      reliableCount,
+      unreliableCount,
+      recurringPatterns,
+    };
 
     return res.status(200).json({
       message: "Analyses retrieved successfully",
