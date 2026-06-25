@@ -30,6 +30,13 @@ from image_modality.utils.constants import (
 from text_modality.services.predict import predict_emotion_from_text
 from expert_system.tracker_service import TrackerService, _extract_context
 
+from report_generation.schemas import (
+    GeneratedReportResponse,
+    ReportRequest,
+)
+from report_generation.report_service import generate_report
+
+
 app = FastAPI()
 model = load_model()
 
@@ -169,3 +176,18 @@ async def predict(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.post(
+    "/generate-report",
+    response_model=GeneratedReportResponse,
+)
+async def generate_report_endpoint(
+    request: ReportRequest,
+):
+    try:
+        return generate_report(request)
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Report generation error: {str(error)}",
+        )
