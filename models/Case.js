@@ -3,8 +3,13 @@ const mongoose = require('mongoose');
 const CaseSchema = new mongoose.Schema({
    doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     childId: { type: mongoose.Schema.Types.ObjectId, ref: 'Child', required: true },
-    status: { type: String, enum: ['pending', 'reviewed', 'closed', 'improving'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'reviewed', 'closed'], default: 'pending' },
     priority: { type: String, enum: ['Low', 'Medium', 'High'], default: 'Low' },
+childProgress: { 
+    type: String, 
+    enum: ['improving', 'stable', 'needs attention', 'no enough data yet'], 
+    default: 'no enough data yet' 
+},
 
     drawings: [{
         imageUrl: String,

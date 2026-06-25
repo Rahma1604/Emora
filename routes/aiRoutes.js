@@ -84,6 +84,15 @@ router.post("/analyze", checkToken, upload.single("file"), async (req, res) => {
         let updatedCase = null;
 
         if (req.user.role === "doctor" && linkedCase) {
+              let progress = "no enough data yet";
+
+    if (linkedCase.entriesCount >= 1) {
+        const diff = percentage - (linkedCase.emotionPercentage || 0);
+
+        if (diff < -5) progress = "improving";
+        else if (diff > 5) progress = "needs attention";
+        else progress = "stable";
+    }
             updatedCase = await Case.findByIdAndUpdate(
                 linkedCase._id,
                 {
@@ -94,6 +103,7 @@ router.post("/analyze", checkToken, upload.single("file"), async (req, res) => {
                         dominantEmotion:
                             aiResponse.data.text_analysis?.emotion || "Unknown",
                         emotionPercentage: percentage,
+                        childProgress: progress,
                         priority: priority,
                         lastAnalysisDate: new Date(),
                     },
