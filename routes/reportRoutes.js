@@ -110,6 +110,42 @@ router.post("/generate", checkToken, async (req, res) => {
       });
     }
 
+    let reportCase = linkedCase;
+
+    if (!reportCase) {
+      reportCase = await Case.findOne({
+        childId: child._id,
+      })
+        .sort({
+          updatedAt: -1,
+          createdAt: -1,
+        })
+        .populate("doctorId", "fullName name firstName lastName");
+    } else {
+      await reportCase.populate("doctorId", "fullName name firstName lastName");
+    }
+
+    const doctor = reportCase?.doctorId || null;
+
+    const combinedDoctorName = [doctor?.firstName, doctor?.lastName]
+      .filter(Boolean)
+      .join(" ");
+
+    const doctorName =
+      doctor?.fullName || doctor?.name || combinedDoctorName || "Not assigned";
+
+    const childName =
+      child.name || child.childName || child.fullName || "Unknown";
+
+    const reportIdentity = {
+      childName,
+      childId: child._id,
+      parentId: child.parentId,
+      caseId: reportCase?._id || null,
+      doctorId: doctor?._id || null,
+      doctorName,
+    };
+
     const analyses = await Analysis.find({
       childId: child._id,
       createdAt: {
@@ -241,8 +277,12 @@ router.post("/generate", checkToken, async (req, res) => {
 
     return res.status(200).json({
       message: "Analyses retrieved successfully",
-      childId: child._id,
-      caseId: linkedCase?._id || null,
+      childName: reportIdentity.childName,
+      childId: reportIdentity.childId,
+      parentId: reportIdentity.parentId,
+      caseId: reportIdentity.caseId,
+      doctorId: reportIdentity.doctorId,
+      doctorName: reportIdentity.doctorName,
       analysisCount: analyses.length,
       period: {
         startDate: startOfPeriod,
