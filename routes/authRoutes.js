@@ -76,6 +76,7 @@ router.post('/register-doctor', uploadDoctorDocs, async (req, res) => {
       password: hashedPassword,
       role: 'doctor', 
       verificationStatus: 'pending',
+      verificationStep: 'submitted',
       isVerified: false, 
       nationalIdNumber,
       specialization,
@@ -209,11 +210,11 @@ router.post('/login', async (req, res) => {
     if (user.role === 'parent'&& !user.isVerified) {
       return res.status(400).json({ msg: 'Please verify your email first' });
     }
-   const token = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '1d' }
-    );
+    const token = jwt.sign(
+    { id: user._id },
+    process.env.JWT_SECRET,
+    { expiresIn: '1d' }
+);
 
     res.json({
       token,

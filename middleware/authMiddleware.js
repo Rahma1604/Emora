@@ -1,6 +1,13 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+const isAdmin = (req, res, next) => {
+  if (req.user && req.user.role === 'admin') {
+    return next();
+  }
+  return res.status(403).json({ message: 'Access denied. Admins only.' });
+};
+
 const checkToken = async(req, res, next) => {
   let token=req.header('x-auth-token');
   if(req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
@@ -21,4 +28,4 @@ const checkToken = async(req, res, next) => {
     return res.status(401).json({ message: 'Invalid or expired token.' });
   }
 };
-module.exports = { checkToken };
+module.exports = { checkToken, isAdmin };

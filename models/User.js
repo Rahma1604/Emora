@@ -3,7 +3,7 @@ const UserSchema=new mongoose.Schema({
     fullName:{type:String,required:true},
     email:{type:String,required:true,unique:true},
     password:{type:String,required:true},
-    role:{type:String,enum:['parent','doctor'],default:'parent'},
+    role:{type:String,enum:['parent','doctor', 'admin'],default:'parent'},
     
     verificationStatus:{type:String,
         enum:['pending', 'approved', 'rejected'],
@@ -42,6 +42,26 @@ nationalIdNumber: { type: String },
         practiceLicense: { type: Boolean, default: false },
         recentSelfie: { type: Boolean, default: false }
     },
-    approvedAt: { type: Date }
+verificationStep: { 
+    type: String, 
+    enum: ['intro', 'documents', 'review', 'submitted'], 
+    default: 'intro' 
+},
+rejectionReason: { type: String, default: "" },
+verificationSubmittedAt: { type: Date },
+documentNotes: {
+    nationalIdFront: { type: String, default: "" },
+    nationalIdBack: { type: String, default: "" },
+    syndicateCardFront: { type: String, default: "" },
+    syndicateCardBack: { type: String, default: "" },
+    graduationCertificate: { type: String, default: "" },
+    specializationCertificate: { type: String, default: "" },
+    practiceLicense: { type: String, default: "" },
+    recentSelfie: { type: String, default: "" }
+},
+    approvedAt: { type: Date },
+
+
 });
+
 module.exports=mongoose.model('User',UserSchema);
