@@ -10,7 +10,6 @@ childProgress: {
     enum: ['improving', 'stable', 'needs attention', 'no enough data yet'], 
     default: 'no enough data yet' 
 },
-
     drawings: [{
         imageUrl: String,
         analysisResult: String,
@@ -21,6 +20,10 @@ childProgress: {
         analysisResult: String,
         createdAt: { type: Date, default: Date.now }
     }],
+   audioAnalyses: [{
+    audioUrl: String,
+    createdAt: { type: Date, default: Date.now }
+}],
 
     entriesCount: { type: Number, default: 0 },
     lastAnalysisDate: { type: Date },
@@ -47,11 +50,13 @@ childProgress: {
         note: String
     }],
 
-    analysisTimeline: [{
-        type: String, 
-        date: Date, 
-        status: String 
-    }],
+   analysisTimeline: [{
+    diagnosis: String,     
+    emotion: String,     
+    confidence: Number,   
+    date: { type: Date, default: Date.now }
+    // هنا لا نهتم بـ "نوع" الموديل، نهتم بالنتيجة فقط
+}],
 
     images: [String], 
     createdAt: { type: Date, default: Date.now }

@@ -1,8 +1,15 @@
 require('dotenv').config();
 console.log("EMAIL_PASS:", process.env.EMAIL_PASS);
+const http = require('http');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+
+const app = express();
+
+const server = http.createServer(app);
+const io = require('socket.io')(server);
+global.io = io;
 
 
 const authRoutes = require('./routes/authRoutes');
@@ -12,7 +19,7 @@ const doctorChatRoutes = require('./routes/doctorChatRoutes');
 const doctorRoutes = require('./routes/doctorRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const adminRoutes = require('./routes/adminRoutes');
-const app = express();
+
 
 app.use(cors());
 app.use(express.json());

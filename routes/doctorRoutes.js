@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const Case = require('../models/Case');
 const { checkToken } = require('../middleware/authMiddleware'); 
+const mongoose = require('mongoose');
+const Notification = require('../models/Notification');
+const { sendNotification:sendParentNotification } = require('../services/notificationPService');
+
 
 router.get('/dashboard-stats', checkToken, async (req, res) => {
     try {
@@ -27,10 +31,50 @@ router.get('/dashboard-stats', checkToken, async (req, res) => {
 });
 
 router.get('/pending-cases', checkToken, async (req, res) => {
+  try {
+        const cases = await Case.find({ doctorId: req.user.id, status: 'pending' })
+            .populate('childId', 'name') // جلب الاسم فقط
+            .sort({ createdAt: -1 })
+            .limit(5); // جلب أحدث 5 حالات فقط كما هو واضح في الصورة
+
+        const formattedCases = cases.map(c => ({
+            _id: c._id,
+            childName: c.childId.name,
+            childId: c.childId._id, // أو الـ ID الذي يظهر في الصورة
+            status: c.status,
+            summary: c.aiDiagnosis || "No summary available", // هنا يظهر الملخص الصغير
+            type: c.dominantEmotion || "General" // هنا يظهر نوع المؤشر (مثل Anxiety Indicators)
+        }));
+        
+        res.json(formattedCases);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+router.get('/recent-activity', checkToken, async (req, res) => {
     try {
-       const cases = await Case.find({ doctorId: req.user.id, status: 'pending' })
-            .populate('childId', 'name age'); 
-        res.json(cases);
+        const doctorId = req.user.id;
+        
+        // نجلب آخر 5 حالات تم التعامل معها
+        const recentCases = await Case.find({ doctorId })
+            .sort({ lastAnalysisDate: -1 })
+            .limit(5);
+
+        const activityLog = recentCases.map(c => {
+            let activity = "";
+            let time = c.lastAnalysisDate;
+            
+            // المنطق الذكي للنشاط:
+            if (c.status === 'reviewed') {
+                activity = "تم إرسال رد الطبيب";
+            } else if (c.analysisTimeline && c.analysisTimeline.length > 0) {
+                activity = "تم رفع تحليل جديد";
+            }
+            
+            return { activity, time };
+        });
+
+        res.json(activityLog);
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }
@@ -46,17 +90,28 @@ router.get('/case-details/:caseId', checkToken, async (req, res) => {
         res.json({childInfo: {
                 name: caseData.childId.name,
                 age: caseData.childId.age,
-                gender: caseData.childId.gender
+                },
+           progressStatus: {
+                label: caseData.childProgress, // "Improving"
+                description: "Showing gradual improvement, but still needs monitoring." // يمكن جعلها ديناميكية لاحقاً
             },
-            analysisHistory: {
-                drawings: caseData.drawings,
-                textAnalyses: caseData.textAnalyses
+            entriesInfo: {
+                totalEntries: caseData.entriesCount,
+                lastAnalysisDate: caseData.lastAnalysisDate
             },
-            aiDiagnosis: caseData.aiDiagnosis,
+            currentAnalysis: {
+                text: caseData.textAnalyses && caseData.textAnalyses.length > 0 
+                      ? caseData.textAnalyses[caseData.textAnalyses.length - 1].content 
+                      : "لا يوجد تحليل نصي متاح حالياً."
+            },
+            emotionData: {
+                emotion: caseData.dominantEmotion, // "Anxiety"
+                percentage: caseData.emotionPercentage, // "75%"
+                keywords: ["School", "Fear", "Sleep", "Stress"] // هذه يجب استخراجها من الـ patterns في الـ Schema
+            },
             aiSummary: caseData.aiSummary,
             status: caseData.status,
-            childProgress: caseData.childProgress,
-            doctorRecommendation: caseData.doctorRecommendation
+            doctorRecommendation: caseData.doctorRecommendation || ""
         });
         
     } catch (err) {
@@ -93,19 +148,28 @@ router.get('/child-overview/:childId', checkToken, async (req, res) => {
 router.put('/review-case/:caseId', checkToken, async (req, res) => {
     try {
         const { doctorRecommendation } = req.body;
+        // 1. تحديث الحالة
         const updatedCase = await Case.findByIdAndUpdate(
             req.params.caseId,
-            { 
-                doctorRecommendation, 
-                status: 'reviewed' 
-            },
+            { doctorRecommendation, status: 'reviewed' },
             { new: true }
-        );
+        ).populate('childId'); // قمنا بعمل populate لجلب بيانات الطفل
+
+        // 2. إرسال إشعار للأب تلقائياً
+         await sendParentNotification({
+    userId: updatedCase.childId.parentId, 
+    childId: updatedCase.childId._id,
+    title: "Analysis Reviewed",
+    message: `Dr. ${req.user.name} has reviewed your child's case.`,
+    type: 'doctor_review'
+});
+
         res.json(updatedCase);
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }
 });
+
 router.get('/home-history', checkToken, async (req, res) => {
     try {
         const doctorId = req.user.id;
@@ -141,9 +205,10 @@ router.get('/history-stats', checkToken, async (req, res) => {
                     totalCases: { $sum: 1 },
                     pending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } },
                     closed: { $sum: { $cond: [{ $eq: ["$status", "closed"] }, 1, 0] } },
-                    avgTimeMinutes: { $avg: { $divide: [{ $subtract: ["$createdAt", "$createdAt"] }, 60000] } } 
+                    avgTimeMinutes: { $avg: { $divide: [{ $subtract: [new Date(), "$createdAt"] }, 60000] } } 
                 }
             }
+
         ]);
         const defaultStats = { totalCases: 0, pending: 0, closed: 0, avgTimeMinutes: 0 };
         res.json(stats.length > 0 ? stats[0] : defaultStats);
@@ -198,6 +263,32 @@ router.get('/weekly-stats', checkToken, async (req, res) => {
             attentionRequired
         });
 
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// 1. جلب الإشعارات (مع خيار التصفية بين الكل وغير المقروء)
+router.get('/notifications', checkToken, async (req, res) => {
+    try {
+        const { unreadOnly } = req.query;
+        let query = { doctorId: req.user.id };
+        if (unreadOnly === 'true') query.isRead = false;
+
+        const notifications = await Notification.find(query)
+            .sort({ createdAt: -1 }); // الترتيب من الأحدث للأقدم
+
+        res.json(notifications);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// 2. تحديث الكل إلى "مقروء" (زر Mark all as read في الصور)
+router.put('/notifications/mark-all-read', checkToken, async (req, res) => {
+    try {
+        await Notification.updateMany({ doctorId: req.user.id, isRead: false }, { isRead: true });
+        res.json({ message: "All notifications marked as read." });
     } catch (err) {
         res.status(500).json({ error: 'Server error' });
     }
