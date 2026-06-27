@@ -1,42 +1,66 @@
 import React, {
-  useEffect,
+  useCallback,
   useMemo,
   useState,
 } from "react";
+
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
+  ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
-  Alert,
-  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
   TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
+
+import {
+  LinearGradient,
+} from "expo-linear-gradient";
+
+import {
+  router,
+  useFocusEffect,
+} from "expo-router";
+
 import {
   Feather,
   Ionicons,
 } from "@expo/vector-icons";
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
+
 import API from "../api";
+
+type ActivityStatus =
+  | "Pending Review"
+  | "Reviewed"
+  | "Closed";
 
 type ActivityItem = {
   id: string;
+  caseId: string;
   childId: string;
   childName: string;
   childAge: number;
+  childGender?: string;
   date: string;
+  rawDate: string;
+  timestamp: number;
   type: string;
   emotion: string;
   description: string;
-  status:
-    | "Pending Review"
-    | "Reviewed"
-    | "Closed";
+  status: ActivityStatus;
+  confidence: number;
   avatarColor: string;
 };
 
@@ -47,50 +71,33 @@ type Child = {
   gender?: string;
 };
 
-const STATIC_ACTIVITIES: ActivityItem[] = [
-  {
-    id: "1",
-    childId: "lily-1",
-    childName: "Lily",
-    childAge: 5,
-    date: "May 12, 2026",
-    type: "Text Entry",
-    emotion: "Anxiety",
-    description:
-      "The results indicate mild anxiety indicators related to the school environment. It is recommended to monitor sleep patterns during the upcoming week.",
-    status: "Pending Review",
-    avatarColor: "#FBC0BF",
-  },
-  {
-    id: "2",
-    childId: "samy-1",
-    childName: "Samy",
-    childAge: 7,
-    date: "May 14, 2026",
-    type: "Text Entry",
-    emotion: "Calm",
-    description:
-      "The results show gradual improvement in the overall emotional state, with a noticeable increase in focus and calmness during group activities.",
-    status: "Reviewed",
-    avatarColor: "#B9D8F6",
-  },
-  {
-    id: "3",
-    childId: "samy-1",
-    childName: "Samy",
-    childAge: 7,
-    date: "May 3, 2026",
-    type: "Text Entry",
-    emotion: "Stress",
-    description:
-      "The analysis indicates a decrease in stress-related indicators, with improved emotional responses during daily interactions and activities.",
-    status: "Closed",
-    avatarColor: "#B9D8F6",
-  },
-];
+type BackendEntry = {
+  id?: string;
+  caseId?: string;
+  date?: string;
+  type?: string;
+  emotion?: string;
+  description?: string;
+  status?: string;
+  confidence?: number;
+  doctorResponseExists?: boolean;
+  imageUrl?: string;
+  audioUrl?: string;
+};
+
+type ChildEntriesResponse = {
+  childInfo?: Child;
+  counts?: {
+    all?: number;
+    pending?: number;
+    reviewed?: number;
+    closed?: number;
+  };
+  entries?: BackendEntry[];
+};
 
 const STATUS_COLORS: Record<
-  ActivityItem["status"],
+  ActivityStatus,
   string
 > = {
   "Pending Review": "#FBC0BF",
@@ -99,7 +106,7 @@ const STATUS_COLORS: Record<
 };
 
 const STATUS_TEXT_COLORS: Record<
-  ActivityItem["status"],
+  ActivityStatus,
   string
 > = {
   "Pending Review": "#C0504D",
@@ -111,126 +118,521 @@ const FILTERS = [
   "All Children",
   "All Statuses",
   "Last 30 Days",
-];
+] as const;
+
+type FilterName =
+  (typeof FILTERS)[number];
+
+const normalizeStatus = (
+  status?: string
+): ActivityStatus => {
+  const normalized =
+    String(status || "")
+      .trim()
+      .toLowerCase();
+
+  if (normalized === "closed") {
+    return "Closed";
+  }
+
+  if (
+    normalized === "reviewed" ||
+    normalized === "improving"
+  ) {
+    return "Reviewed";
+  }
+
+  return "Pending Review";
+};
+
+const formatDate = (
+  value?: string
+): string => {
+  if (!value) {
+    return "Date unavailable";
+  }
+
+  const date = new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return value;
+  }
+
+  return date.toLocaleDateString(
+    "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }
+  );
+};
+
+const getErrorMessage = (
+  error: unknown
+): string => {
+  if (
+    axios.isAxiosError(error)
+  ) {
+    const data =
+      error.response?.data as
+        | {
+            msg?: unknown;
+            message?: unknown;
+            error?: unknown;
+          }
+        | undefined;
+
+    const message =
+      data?.msg ??
+      data?.message ??
+      data?.error;
+
+    if (
+      typeof message === "string" &&
+      message.trim()
+    ) {
+      return message;
+    }
+  }
+
+  return "Failed to load activity history.";
+};
 
 export default function ActivityHistory() {
   const [
     activeFilter,
     setActiveFilter,
-  ] = useState("All Children");
+  ] =
+    useState<FilterName>(
+      "All Children"
+    );
 
   const [
     children,
     setChildren,
-  ] = useState<Child[]>([]);
+  ] =
+    useState<Child[]>([]);
 
   const [
-    childrenLoading,
-    setChildrenLoading,
-  ] = useState(true);
+    activities,
+    setActivities,
+  ] =
+    useState<ActivityItem[]>(
+      []
+    );
 
   const [
-    childrenError,
-    setChildrenError,
-  ] = useState("");
+    loading,
+    setLoading,
+  ] =
+    useState(true);
+
+  const [
+    refreshing,
+    setRefreshing,
+  ] =
+    useState(false);
+
+  const [
+    screenError,
+    setScreenError,
+  ] =
+    useState("");
 
   const [
     showEntryChildPicker,
     setShowEntryChildPicker,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const [
     showSearchModal,
     setShowSearchModal,
-  ] = useState(false);
+  ] =
+    useState(false);
 
   const [
     searchQuery,
     setSearchQuery,
-  ] = useState("");
+  ] =
+    useState("");
 
-  useEffect(() => {
-    fetchChildren();
-  }, []);
+  const handleExpiredSession =
+    useCallback(async () => {
+      await AsyncStorage.multiRemove(
+        [
+          "token",
+          "user",
+        ]
+      );
 
-  const filteredChildren = useMemo(() => {
-    const normalizedQuery = searchQuery
-      .trim()
-      .toLowerCase();
+      router.replace(
+        "/auth/login" as any
+      );
+    }, []);
 
-    if (!normalizedQuery) {
-      return children;
-    }
+  const loadHistory =
+    useCallback(
+      async (
+        mode:
+          | "initial"
+          | "refresh" =
+          "initial"
+      ) => {
+        if (
+          mode === "refresh"
+        ) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
 
-    return children.filter((child) =>
-      child.name
-        .toLowerCase()
-        .includes(normalizedQuery)
+        setScreenError("");
+
+        try {
+          const childrenResponse =
+            await API.get<Child[]>(
+              "/children/all"
+            );
+
+          const childrenData =
+            Array.isArray(
+              childrenResponse.data
+            )
+              ? childrenResponse.data
+              : [];
+
+          setChildren(
+            childrenData
+          );
+
+          if (
+            childrenData.length ===
+            0
+          ) {
+            setActivities([]);
+            return;
+          }
+
+          const entryResponses =
+            await Promise.all(
+              childrenData.map(
+                (
+                  child
+                ) =>
+                  API.get<ChildEntriesResponse>(
+                    `/children/${child._id}/entries`
+                  )
+              )
+            );
+
+          const combinedActivities:
+            ActivityItem[] =
+              [];
+
+          entryResponses.forEach(
+            (
+              response,
+              responseIndex
+            ) => {
+              const fallbackChild =
+                childrenData[
+                  responseIndex
+                ];
+
+              const child =
+                response.data
+                  ?.childInfo ||
+                fallbackChild;
+
+              const entries =
+                Array.isArray(
+                  response.data
+                    ?.entries
+                )
+                  ? response.data
+                      .entries
+                  : [];
+
+              entries.forEach(
+                (
+                  entry,
+                  entryIndex
+                ) => {
+                  const rawDate =
+                    entry.date ||
+                    "";
+
+                  const timestamp =
+                    rawDate
+                      ? new Date(
+                          rawDate
+                        ).getTime()
+                      : 0;
+
+                  combinedActivities.push(
+                    {
+                      id:
+                        entry.id ||
+                        `${child._id}-${entryIndex}`,
+
+                      caseId:
+                        entry.caseId ||
+                        "",
+
+                      childId:
+                        child._id,
+
+                      childName:
+                        child.name ||
+                        "Child",
+
+                      childAge:
+                        Number(
+                          child.age ||
+                          0
+                        ),
+
+                      childGender:
+                        child.gender,
+
+                      date:
+                        formatDate(
+                          rawDate
+                        ),
+
+                      rawDate,
+
+                      timestamp:
+                        Number.isFinite(
+                          timestamp
+                        )
+                          ? timestamp
+                          : 0,
+
+                      type:
+                        entry.type ||
+                        "Entry",
+
+                      emotion:
+                        entry.emotion ||
+                        "Unknown",
+
+                      description:
+                        entry.description ||
+                        "No analysis description is available.",
+
+                      status:
+                        normalizeStatus(
+                          entry.status
+                        ),
+
+                      confidence:
+                        Number(
+                          entry.confidence ||
+                          0
+                        ),
+
+                      avatarColor:
+                        String(
+                          child.gender ||
+                          ""
+                        )
+                          .toLowerCase()
+                          .includes(
+                            "female"
+                          )
+                          ? "#FBC0BF"
+                          : "#B9D8F6",
+                    }
+                  );
+                }
+              );
+            }
+          );
+
+          combinedActivities.sort(
+            (
+              first,
+              second
+            ) =>
+              second.timestamp -
+              first.timestamp
+          );
+
+          setActivities(
+            combinedActivities
+          );
+        } catch (error) {
+          console.log(
+            "ACTIVITY HISTORY ERROR:",
+            error
+          );
+
+          if (
+            axios.isAxiosError(
+              error
+            ) &&
+            (
+              error.response
+                ?.status ===
+                401 ||
+              error.response
+                ?.status ===
+                403
+            )
+          ) {
+            await handleExpiredSession();
+            return;
+          }
+
+          setScreenError(
+            getErrorMessage(
+              error
+            )
+          );
+        } finally {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      },
+      [
+        handleExpiredSession,
+      ]
     );
-  }, [children, searchQuery]);
 
-  const fetchChildren = async () => {
-    try {
-      setChildrenLoading(true);
-      setChildrenError("");
+  useFocusEffect(
+    useCallback(() => {
+      void loadHistory(
+        "initial"
+      );
+    }, [loadHistory])
+  );
 
-      const response = await API.get(
-        "/children/all"
+  const filteredActivities =
+    useMemo(() => {
+      if (
+        activeFilter !==
+        "Last 30 Days"
+      ) {
+        return activities;
+      }
+
+      const cutoff =
+        new Date();
+
+      cutoff.setDate(
+        cutoff.getDate() -
+          30
       );
 
-      const childrenData = Array.isArray(
-        response.data
-      )
-        ? response.data
-        : response.data?.children || [];
-
-      setChildren(childrenData);
-    } catch (error: any) {
-      const message =
-        error?.response?.data?.msg ||
-        error?.response?.data?.message ||
-        error?.response?.data?.error ||
-        "Failed to load children";
-
-      setChildrenError(message);
-
-      console.log(
-        "Activity history children error:",
-        error?.response?.data ||
-          error?.message
+      return activities.filter(
+        (
+          activity
+        ) =>
+          activity.timestamp >=
+          cutoff.getTime()
       );
-    } finally {
-      setChildrenLoading(false);
-    }
-  };
+    }, [
+      activities,
+      activeFilter,
+    ]);
+
+  const filteredChildren =
+    useMemo(() => {
+      const normalizedQuery =
+        searchQuery
+          .trim()
+          .toLowerCase();
+
+      if (
+        !normalizedQuery
+      ) {
+        return children;
+      }
+
+      return children.filter(
+        (
+          child
+        ) =>
+          child.name
+            .toLowerCase()
+            .includes(
+              normalizedQuery
+            )
+      );
+    }, [
+      children,
+      searchQuery,
+    ]);
 
   const openActivityDetails = (
     item: ActivityItem
   ) => {
+    const childEntryCount =
+      activities.filter(
+        (
+          activity
+        ) =>
+          activity.childId ===
+          item.childId
+      ).length;
+
     router.push(
       {
         pathname:
           "/parent/activity-details",
+
         params: {
-          activityId: item.id,
-          childId: item.childId,
-          childName: item.childName,
-          childAge: String(
-            item.childAge
-          ),
-          date: item.date,
-          type: item.type,
-          emotion: item.emotion,
+          activityId:
+            item.id,
+
+          caseId:
+            item.caseId,
+
+          childId:
+            item.childId,
+
+          childName:
+            item.childName,
+
+          childAge:
+            String(
+              item.childAge
+            ),
+
+          date:
+            item.date,
+
+          rawDate:
+            item.rawDate,
+
+          type:
+            item.type,
+
+          emotion:
+            item.emotion,
+
           description:
             item.description,
-          status: item.status,
-          entryCount: String(
-            STATIC_ACTIVITIES.filter(
-              (activity) =>
-                activity.childId ===
-                item.childId
-            ).length
-          ),
+
+          status:
+            item.status,
+
+          confidence:
+            String(
+              item.confidence
+            ),
+
+          entryCount:
+            String(
+              childEntryCount
+            ),
         },
       } as any
     );
@@ -239,15 +641,26 @@ export default function ActivityHistory() {
   const openAddEntryForChild = (
     child: Child
   ) => {
-    setShowEntryChildPicker(false);
+    setShowEntryChildPicker(
+      false
+    );
 
     router.push(
       {
-        pathname: "/parent/ai-chat",
+        pathname:
+          "/parent/ai-chat",
+
         params: {
-          childId: child._id,
-          childName: child.name,
-          childAge: String(child.age),
+          childId:
+            child._id,
+
+          childName:
+            child.name,
+
+          childAge:
+            String(
+              child.age
+            ),
         },
       } as any
     );
@@ -256,39 +669,32 @@ export default function ActivityHistory() {
   const openChildProfile = (
     child: Child
   ) => {
-    setShowSearchModal(false);
+    setShowSearchModal(
+      false
+    );
+
     setSearchQuery("");
 
     router.push(
       {
         pathname:
           "/parent/childProfile",
+
         params: {
-          childId: child._id,
-          childName: child.name,
-          childAge: String(child.age),
+          childId:
+            child._id,
+
+          childName:
+            child.name,
+
+          childAge:
+            String(
+              child.age
+            ),
         },
       } as any
     );
   };
-
-  const showChildrenLoadingError =
-    () => {
-      Alert.alert(
-        "Unable to load children",
-        "We could not load your child profiles. Please try again.",
-        [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
-          {
-            text: "Try Again",
-            onPress: fetchChildren,
-          },
-        ]
-      );
-    };
 
   const showAddChildAlert = (
     message: string
@@ -312,68 +718,82 @@ export default function ActivityHistory() {
     );
   };
 
-  const handleAddEntryPress = () => {
-    if (childrenLoading) {
-      return;
-    }
+  const handleAddEntryPress =
+    () => {
+      if (loading) {
+        return;
+      }
 
-    if (childrenError) {
-      showChildrenLoadingError();
-      return;
-    }
+      if (screenError) {
+        void loadHistory(
+          "refresh"
+        );
+        return;
+      }
 
-    if (children.length === 0) {
-      showAddChildAlert(
-        "You need to add a child profile before adding an entry."
+      if (
+        children.length ===
+        0
+      ) {
+        showAddChildAlert(
+          "You need to add a child profile before adding an entry."
+        );
+        return;
+      }
+
+      if (
+        children.length ===
+        1
+      ) {
+        openAddEntryForChild(
+          children[0]
+        );
+        return;
+      }
+
+      setShowEntryChildPicker(
+        true
       );
+    };
 
-      return;
-    }
+  const handleSearchPress =
+    () => {
+      if (loading) {
+        return;
+      }
 
-    if (children.length === 1) {
-      openAddEntryForChild(
-        children[0]
+      if (
+        children.length ===
+        0
+      ) {
+        showAddChildAlert(
+          "You need to add a child profile before searching."
+        );
+        return;
+      }
+
+      setSearchQuery("");
+      setShowSearchModal(
+        true
       );
-
-      return;
-    }
-
-    setShowEntryChildPicker(true);
-  };
-
-  const handleSearchPress = () => {
-    if (childrenLoading) {
-      return;
-    }
-
-    if (childrenError) {
-      showChildrenLoadingError();
-      return;
-    }
-
-    if (children.length === 0) {
-      showAddChildAlert(
-        "You need to add a child profile before searching."
-      );
-
-      return;
-    }
-
-    setSearchQuery("");
-    setShowSearchModal(true);
-  };
+    };
 
   const getChildIcon = (
     child: Child
   ) => {
     const gender =
-      child.gender?.toLowerCase();
+      child.gender
+        ?.toLowerCase();
 
-    if (gender === "female") {
+    if (
+      gender === "female"
+    ) {
       return "female";
     }
 
-    if (gender === "male") {
+    if (
+      gender === "male"
+    ) {
       return "male";
     }
 
@@ -382,10 +802,15 @@ export default function ActivityHistory() {
 
   return (
     <SafeAreaView
-      style={styles.safeArea}
+      style={
+        styles.safeArea
+      }
     >
-      <View style={styles.container}>
-        {/* Background Gradient */}
+      <View
+        style={
+          styles.container
+        }
+      >
         <View
           style={
             styles.topGradientWrapper
@@ -440,10 +865,15 @@ export default function ActivityHistory() {
           />
         </View>
 
-        {/* Header */}
-        <View style={styles.header}>
+        <View
+          style={
+            styles.header
+          }
+        >
           <Text
-            style={styles.headerTitle}
+            style={
+              styles.headerTitle
+            }
           >
             Activity History
           </Text>
@@ -453,200 +883,338 @@ export default function ActivityHistory() {
               styles.headerSubtitle
             }
           >
-            Track All Previous Analyses And
-            Updates
+            Track All Previous Analyses And Updates
           </Text>
         </View>
 
-        {/* Filter Tabs */}
         <View
-          style={styles.filterRow}
-        >
-          {FILTERS.map((filter) => (
-            <TouchableOpacity
-              key={filter}
-              activeOpacity={0.7}
-              onPress={() =>
-                setActiveFilter(filter)
-              }
-              style={styles.filterTab}
-            >
-              <Text
-                style={[
-                  styles.filterText,
-
-                  activeFilter ===
-                    filter &&
-                    styles.filterTextActive,
-                ]}
-              >
-                {filter}
-              </Text>
-
-              {activeFilter ===
-              filter ? (
-                <View
-                  style={
-                    styles.filterUnderline
-                  }
-                />
-              ) : null}
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Activity List */}
-        <ScrollView
-          style={styles.list}
-          contentContainerStyle={
-            styles.listContent
-          }
-          showsVerticalScrollIndicator={
-            false
+          style={
+            styles.filterRow
           }
         >
-          {STATIC_ACTIVITIES.map(
-            (item) => (
+          {FILTERS.map(
+            (
+              filter
+            ) => (
               <TouchableOpacity
-                key={item.id}
-                activeOpacity={0.88}
-                style={styles.card}
+                key={
+                  filter
+                }
+                activeOpacity={0.7}
                 onPress={() =>
-                  openActivityDetails(
-                    item
+                  setActiveFilter(
+                    filter
                   )
                 }
+                style={
+                  styles.filterTab
+                }
               >
-                {/* Card Header */}
-                <View
-                  style={
-                    styles.cardHeader
-                  }
-                >
-                  <View
-                    style={
-                      styles.cardLeft
-                    }
-                  >
-                    <View
-                      style={[
-                        styles.avatar,
-                        {
-                          backgroundColor:
-                            item.avatarColor,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name="happy"
-                        size={22}
-                        color="#FFFFFF"
-                      />
-                    </View>
-
-                    <View>
-                      <Text
-                        style={
-                          styles.childName
-                        }
-                      >
-                        {item.childName}
-                      </Text>
-
-                      <Text
-                        style={
-                          styles.dateText
-                        }
-                      >
-                        {item.date}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Status Badge */}
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      {
-                        backgroundColor:
-                          STATUS_COLORS[
-                            item.status
-                          ] + "55",
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.statusText,
-                        {
-                          color:
-                            STATUS_TEXT_COLORS[
-                              item.status
-                            ],
-                        },
-                      ]}
-                    >
-                      {item.status}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Type and Emotion */}
                 <Text
-                  style={styles.typeText}
+                  style={[
+                    styles.filterText,
+
+                    activeFilter ===
+                      filter &&
+                      styles.filterTextActive,
+                  ]}
                 >
-                  {item.type} ·{" "}
-                  <Text
-                    style={
-                      styles.emotionText
-                    }
-                  >
-                    {item.emotion}
-                  </Text>
+                  {filter}
                 </Text>
 
-                {/* Description */}
-                <Text
-                  style={styles.descText}
-                >
-                  {item.description}
-                </Text>
-
-                <View
-                  style={
-                    styles.cardFooter
-                  }
-                >
-                  <Text
+                {activeFilter ===
+                filter ? (
+                  <View
                     style={
-                      styles.viewDetailsText
+                      styles.filterUnderline
                     }
-                  >
-                    View Details
-                  </Text>
-
-                  <Ionicons
-                    name="arrow-forward"
-                    size={17}
-                    color="#7BB8E8"
                   />
-                </View>
+                ) : null}
               </TouchableOpacity>
             )
           )}
+        </View>
 
+        {screenError ? (
           <View
             style={
-              styles.listBottomSpace
+              styles.errorBanner
             }
-          />
-        </ScrollView>
+          >
+            <Ionicons
+              name="alert-circle-outline"
+              size={18}
+              color="#C95860"
+            />
 
-        {/* Bottom Navigation */}
-        <View style={styles.bottomNav}>
+            <Text
+              style={
+                styles.errorBannerText
+              }
+            >
+              {screenError}
+            </Text>
+
+            <TouchableOpacity
+              onPress={() =>
+                void loadHistory(
+                  "refresh"
+                )
+              }
+            >
+              <Text
+                style={
+                  styles.retryText
+                }
+              >
+                Retry
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {loading ? (
+          <View
+            style={
+              styles.loadingState
+            }
+          >
+            <ActivityIndicator
+              size="large"
+              color="#7BB8E8"
+            />
+
+            <Text
+              style={
+                styles.loadingText
+              }
+            >
+              Loading activity history...
+            </Text>
+          </View>
+        ) : (
+          <ScrollView
+            style={
+              styles.list
+            }
+            contentContainerStyle={
+              styles.listContent
+            }
+            showsVerticalScrollIndicator={
+              false
+            }
+            refreshControl={
+              <RefreshControl
+                refreshing={
+                  refreshing
+                }
+                onRefresh={() =>
+                  void loadHistory(
+                    "refresh"
+                  )
+                }
+                tintColor="#7BB8E8"
+              />
+            }
+          >
+            {filteredActivities.length >
+            0 ? (
+              filteredActivities.map(
+                (
+                  item
+                ) => (
+                  <TouchableOpacity
+                    key={`${item.caseId}-${item.id}`}
+                    activeOpacity={0.88}
+                    style={
+                      styles.card
+                    }
+                    onPress={() =>
+                      openActivityDetails(
+                        item
+                      )
+                    }
+                  >
+                    <View
+                      style={
+                        styles.cardHeader
+                      }
+                    >
+                      <View
+                        style={
+                          styles.cardLeft
+                        }
+                      >
+                        <View
+                          style={[
+                            styles.avatar,
+
+                            {
+                              backgroundColor:
+                                item.avatarColor,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name="happy"
+                            size={22}
+                            color="#FFFFFF"
+                          />
+                        </View>
+
+                        <View>
+                          <Text
+                            style={
+                              styles.childName
+                            }
+                          >
+                            {
+                              item.childName
+                            }
+                          </Text>
+
+                          <Text
+                            style={
+                              styles.dateText
+                            }
+                          >
+                            {item.date}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View
+                        style={[
+                          styles.statusBadge,
+
+                          {
+                            backgroundColor:
+                              STATUS_COLORS[
+                                item.status
+                              ] +
+                              "55",
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusText,
+
+                            {
+                              color:
+                                STATUS_TEXT_COLORS[
+                                  item.status
+                                ],
+                            },
+                          ]}
+                        >
+                          {item.status}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text
+                      style={
+                        styles.typeText
+                      }
+                    >
+                      {item.type} ·{" "}
+                      <Text
+                        style={
+                          styles.emotionText
+                        }
+                      >
+                        {item.emotion}
+                      </Text>
+                    </Text>
+
+                    <Text
+                      style={
+                        styles.descText
+                      }
+                      numberOfLines={4}
+                    >
+                      {
+                        item.description
+                      }
+                    </Text>
+
+                    <View
+                      style={
+                        styles.cardFooter
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.viewDetailsText
+                        }
+                      >
+                        View Details
+                      </Text>
+
+                      <Ionicons
+                        name="arrow-forward"
+                        size={17}
+                        color="#7BB8E8"
+                      />
+                    </View>
+                  </TouchableOpacity>
+                )
+              )
+            ) : (
+              <View
+                style={
+                  styles.emptyState
+                }
+              >
+                <View
+                  style={
+                    styles.emptyIcon
+                  }
+                >
+                  <Ionicons
+                    name="document-text-outline"
+                    size={31}
+                    color="#7BB8E8"
+                  />
+                </View>
+
+                <Text
+                  style={
+                    styles.emptyTitle
+                  }
+                >
+                  No activities yet
+                </Text>
+
+                <Text
+                  style={
+                    styles.emptyDescription
+                  }
+                >
+                  New text, drawing and voice analyses will appear here after you add entries for your children.
+                </Text>
+              </View>
+            )}
+
+            <View
+              style={
+                styles.listBottomSpace
+              }
+            />
+          </ScrollView>
+        )}
+
+        <View
+          style={
+            styles.bottomNav
+          }
+        >
           <TouchableOpacity
             activeOpacity={0.7}
-            style={styles.navItem}
+            style={
+              styles.navItem
+            }
             onPress={() =>
               router.push(
                 "/parent/parentHome"
@@ -659,14 +1227,20 @@ export default function ActivityHistory() {
               color="#999"
             />
 
-            <Text style={styles.navText}>
+            <Text
+              style={
+                styles.navText
+              }
+            >
               Home
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             activeOpacity={0.7}
-            style={styles.navItem}
+            style={
+              styles.navItem
+            }
           >
             <Feather
               name="list"
@@ -692,7 +1266,9 @@ export default function ActivityHistory() {
             onPress={
               handleAddEntryPress
             }
-            disabled={childrenLoading}
+            disabled={
+              loading
+            }
           >
             <LinearGradient
               colors={[
@@ -711,7 +1287,7 @@ export default function ActivityHistory() {
                 styles.centerButton
               }
             >
-              {childrenLoading ? (
+              {loading ? (
                 <ActivityIndicator
                   size="small"
                   color="#FFFFFF"
@@ -728,31 +1304,36 @@ export default function ActivityHistory() {
 
           <TouchableOpacity
             activeOpacity={0.7}
-            style={styles.navItem}
-            onPress={handleSearchPress}
-            disabled={childrenLoading}
+            style={
+              styles.navItem
+            }
+            onPress={
+              handleSearchPress
+            }
+            disabled={
+              loading
+            }
           >
-            {childrenLoading ? (
-              <ActivityIndicator
-                size="small"
-                color="#999"
-              />
-            ) : (
-              <Feather
-                name="search"
-                size={20}
-                color="#999"
-              />
-            )}
+            <Feather
+              name="search"
+              size={20}
+              color="#999"
+            />
 
-            <Text style={styles.navText}>
+            <Text
+              style={
+                styles.navText
+              }
+            >
               Search
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             activeOpacity={0.7}
-            style={styles.navItem}
+            style={
+              styles.navItem
+            }
             onPress={() =>
               router.push(
                 "/parent/profile"
@@ -765,15 +1346,20 @@ export default function ActivityHistory() {
               color="#999"
             />
 
-            <Text style={styles.navText}>
+            <Text
+              style={
+                styles.navText
+              }
+            >
               Profile
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Add Entry Child Selection Modal */}
         <Modal
-          visible={showEntryChildPicker}
+          visible={
+            showEntryChildPicker
+          }
           transparent
           animationType="fade"
           onRequestClose={() =>
@@ -783,7 +1369,9 @@ export default function ActivityHistory() {
           }
         >
           <View
-            style={styles.modalOverlay}
+            style={
+              styles.modalOverlay
+            }
           >
             <Pressable
               style={
@@ -802,11 +1390,15 @@ export default function ActivityHistory() {
               }
             >
               <View
-                style={styles.modalHandle}
+                style={
+                  styles.modalHandle
+                }
               />
 
               <View
-                style={styles.modalHeader}
+                style={
+                  styles.modalHeader
+                }
               >
                 <View
                   style={
@@ -843,8 +1435,7 @@ export default function ActivityHistory() {
                         styles.modalSubtitle
                       }
                     >
-                      Select a child to add a
-                      new emotional update.
+                      Select a child to add a new emotional update.
                     </Text>
                   </View>
                 </View>
@@ -877,9 +1468,14 @@ export default function ActivityHistory() {
                 }
               >
                 {children.map(
-                  (child, index) => (
+                  (
+                    child,
+                    index
+                  ) => (
                     <TouchableOpacity
-                      key={child._id}
+                      key={
+                        child._id
+                      }
                       activeOpacity={0.8}
                       onPress={() =>
                         openAddEntryForChild(
@@ -893,9 +1489,11 @@ export default function ActivityHistory() {
                       <View
                         style={[
                           styles.modalChildAvatar,
+
                           {
                             backgroundColor:
-                              index % 2 ===
+                              index %
+                                2 ===
                               0
                                 ? "rgba(251,192,191,0.45)"
                                 : "rgba(185,216,246,0.55)",
@@ -903,9 +1501,11 @@ export default function ActivityHistory() {
                         ]}
                       >
                         <Ionicons
-                          name={getChildIcon(
-                            child
-                          )}
+                          name={
+                            getChildIcon(
+                              child
+                            )
+                          }
                           size={22}
                           color="#333"
                         />
@@ -966,18 +1566,23 @@ export default function ActivityHistory() {
           </View>
         </Modal>
 
-        {/* Search Children Modal */}
         <Modal
-          visible={showSearchModal}
+          visible={
+            showSearchModal
+          }
           transparent
           animationType="fade"
           onRequestClose={() => {
-            setShowSearchModal(false);
+            setShowSearchModal(
+              false
+            );
             setSearchQuery("");
           }}
         >
           <View
-            style={styles.modalOverlay}
+            style={
+              styles.modalOverlay
+            }
           >
             <Pressable
               style={
@@ -997,11 +1602,15 @@ export default function ActivityHistory() {
               }
             >
               <View
-                style={styles.modalHandle}
+                style={
+                  styles.modalHandle
+                }
               />
 
               <View
-                style={styles.modalHeader}
+                style={
+                  styles.modalHeader
+                }
               >
                 <View
                   style={
@@ -1038,8 +1647,7 @@ export default function ActivityHistory() {
                         styles.modalSubtitle
                       }
                     >
-                      Search by name to open a
-                      child profile.
+                      Search by name to open a child profile.
                     </Text>
                   </View>
                 </View>
@@ -1076,24 +1684,33 @@ export default function ActivityHistory() {
                 />
 
                 <TextInput
-                  value={searchQuery}
+                  value={
+                    searchQuery
+                  }
                   onChangeText={
                     setSearchQuery
                   }
                   placeholder="Search by child name"
                   placeholderTextColor="#AAAAAA"
-                  style={styles.searchInput}
+                  style={
+                    styles.searchInput
+                  }
                   autoCapitalize="none"
-                  autoCorrect={false}
+                  autoCorrect={
+                    false
+                  }
                   autoFocus
                   returnKeyType="search"
                 />
 
-                {searchQuery.length > 0 ? (
+                {searchQuery.length >
+                0 ? (
                   <TouchableOpacity
                     activeOpacity={0.7}
                     onPress={() =>
-                      setSearchQuery("")
+                      setSearchQuery(
+                        ""
+                      )
                     }
                     style={
                       styles.clearSearchButton
@@ -1123,9 +1740,14 @@ export default function ActivityHistory() {
                 {filteredChildren.length >
                 0 ? (
                   filteredChildren.map(
-                    (child, index) => (
+                    (
+                      child,
+                      index
+                    ) => (
                       <TouchableOpacity
-                        key={child._id}
+                        key={
+                          child._id
+                        }
                         activeOpacity={0.8}
                         onPress={() =>
                           openChildProfile(
@@ -1139,9 +1761,11 @@ export default function ActivityHistory() {
                         <View
                           style={[
                             styles.modalChildAvatar,
+
                             {
                               backgroundColor:
-                                index % 2 ===
+                                index %
+                                  2 ===
                                 0
                                   ? "rgba(251,192,191,0.45)"
                                   : "rgba(185,216,246,0.55)",
@@ -1149,9 +1773,11 @@ export default function ActivityHistory() {
                           ]}
                         >
                           <Ionicons
-                            name={getChildIcon(
-                              child
-                            )}
+                            name={
+                              getChildIcon(
+                                child
+                              )
+                            }
                             size={22}
                             color="#333"
                           />
@@ -1175,8 +1801,7 @@ export default function ActivityHistory() {
                               styles.modalChildAge
                             }
                           >
-                            {child.age} years
-                            old
+                            {child.age} years old
                           </Text>
                         </View>
 
@@ -1219,8 +1844,7 @@ export default function ActivityHistory() {
                         styles.emptySearchText
                       }
                     >
-                      Try searching with a
-                      different name.
+                      Try searching with a different name.
                     </Text>
                   </View>
                 )}
@@ -1306,12 +1930,51 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
 
+  errorBanner: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: 12,
+    backgroundColor: "#FFF0F1",
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  errorBannerText: {
+    flex: 1,
+    marginHorizontal: 7,
+    fontSize: 9.5,
+    lineHeight: 14,
+    color: "#925A60",
+  },
+
+  retryText: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#C95860",
+  },
+
+  loadingState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingBottom: 95,
+  },
+
+  loadingText: {
+    marginTop: 10,
+    fontSize: 10,
+    color: "#8A8A8A",
+  },
+
   list: {
     flex: 1,
     paddingHorizontal: 16,
   },
 
   listContent: {
+    flexGrow: 1,
     paddingTop: 4,
   },
 
@@ -1343,6 +2006,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    flex: 1,
+    paddingRight: 8,
   },
 
   avatar: {
@@ -1408,6 +2073,40 @@ const styles = StyleSheet.create({
     fontSize: 8.5,
     fontWeight: "600",
     color: "#7BB8E8",
+  },
+
+  emptyState: {
+    flex: 1,
+    minHeight: 350,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 35,
+    paddingBottom: 80,
+  },
+
+  emptyIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EDF6FD",
+  },
+
+  emptyTitle: {
+    marginTop: 13,
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#222222",
+  },
+
+  emptyDescription: {
+    marginTop: 7,
+    maxWidth: 290,
+    fontSize: 9.5,
+    lineHeight: 15,
+    color: "#8A8A8A",
+    textAlign: "center",
   },
 
   listBottomSpace: {

@@ -1,50 +1,141 @@
-import React, { useMemo } from "react";
+import React, {
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
+
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
+  ActivityIndicator,
+  RefreshControl,
   ScrollView,
   StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
-import { router, type Href } from "expo-router";
-import Svg, { Circle, G } from "react-native-svg";
+
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
+
+import {
+  LinearGradient,
+} from "expo-linear-gradient";
+
+import {
+  Ionicons,
+} from "@expo/vector-icons";
+
+import {
+  Image,
+} from "expo-image";
+
+import {
+  router,
+  useFocusEffect,
+  type Href,
+} from "expo-router";
+
+import Svg, {
+  Circle,
+  G,
+} from "react-native-svg";
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
+
+import API from "../api";
 
 const girlPhoto = require("../../assets/images/images/girl.png");
 const boyPhoto = require("../../assets/images/images/boy.png");
+const childPhoto = require("../../assets/images/images/child.png");
 
-type IoniconName = keyof typeof Ionicons.glyphMap;
+type IoniconName =
+  keyof typeof Ionicons.glyphMap;
 
-type StatisticItem = {
-  title: string;
-  value: string;
-  valueColor: string;
+type PopulatedChild = {
+  _id?: string;
+  id?: string;
+  name?: string;
+  age?: number;
+  gender?: string;
+};
+
+type WeeklySummary = {
+  newCases?: number;
+  reviewedCases?: number;
+  activeCases?: number;
+};
+
+type EmotionStat = {
+  emotion?: string;
+  count?: number;
+  percentage?: number;
+};
+
+type RawAttentionCase = {
+  _id: string;
+
+  childId?:
+    | string
+    | PopulatedChild
+    | null;
+
+  dominantEmotion?: string;
+  aiDiagnosis?: string;
+  aiSummary?: string;
+  priority?: string;
+  status?: string;
+  recurringPatterns?: string[];
+};
+
+type WeeklyStatsResponse = {
+  summary?: WeeklySummary;
+  emotionStats?: EmotionStat[];
+  attentionRequired?: RawAttentionCase[];
+};
+
+type HistoryStatsResponse = {
+  totalCases?: number;
+  pending?: number;
+  reviewed?: number;
+  closed?: number;
+  improving?: number;
+  avgTimeMinutes?: number;
+};
+
+type DashboardStatsResponse = {
+  pendingCases?: number;
+  reviewedCases?: number;
+  newThisWeek?: number;
+  childrenFollowed?: number;
 };
 
 type DistributionItem = {
   name: string;
   value: number;
+  count: number;
   color: string;
 };
 
-type BehavioralPattern = {
+type PatternItem = {
   title: string;
-  prevalence: string;
+  count: number;
+  percentage: number;
   icon: IoniconName;
   iconColor: string;
   iconBackground: string;
-  trend: "up" | "down";
 };
 
 type AttentionCase = {
-  name: string;
+  caseId: string;
   childId: string;
+  name: string;
+  age: number | null;
+  gender: string;
   indicator: string;
-  priority: "High Priority" | "Medium Priority";
+  priority: string;
   avatar: number;
 };
 
@@ -56,217 +147,693 @@ type BottomNavItemProps = {
   onPress: () => void;
 };
 
-type WeeklyTrendItem = {
-  day: string;
-  anxiety: number;
-  stress: number;
-  calm: number;
+const EMOTION_COLORS = [
+  "#E85E66",
+  "#F0A544",
+  "#75AEE1",
+  "#55B96A",
+  "#9C7CC1",
+  "#4EB4A7",
+  "#C47D91",
+  "#7B8793",
+];
+
+const getChildData = (
+  childId:
+    | RawAttentionCase["childId"]
+): PopulatedChild => {
+  if (
+    childId &&
+    typeof childId === "object"
+  ) {
+    return childId;
+  }
+
+  return {};
 };
 
-type WeeklyEmotionKey =
-  | "anxiety"
-  | "stress"
-  | "calm";
+const getChildId = (
+  childId:
+    | RawAttentionCase["childId"]
+): string => {
+  if (
+    typeof childId === "string"
+  ) {
+    return childId;
+  }
 
-type WeeklyLegendItem = {
-  key: WeeklyEmotionKey;
-  label: string;
-  color: string;
+  return (
+    childId?._id ||
+    childId?.id ||
+    ""
+  );
 };
 
-const statistics: StatisticItem[] = [
-  {
-    title: "TOTAL CASES",
-    value: "58",
-    valueColor: "#2084D4",
-  },
-  {
-    title: "ACTIVE CHILDREN",
-    value: "12",
-    valueColor: "#159647",
-  },
-  {
-    title: "Reviewed Cases",
-    value: "38",
-    valueColor: "#2084D4",
-  },
-  {
-    title: "Pending Cases",
-    value: "12",
-    valueColor: "#22262A",
-  },
-];
+const getAvatar = (
+  gender?: string
+): number => {
+  const value =
+    String(gender || "")
+      .trim()
+      .toLowerCase();
 
-const distributionData: DistributionItem[] = [
-  {
-    name: "Anxiety",
-    value: 42,
-    color: "#E3262E",
-  },
-  {
-    name: "Stress",
-    value: 31,
-    color: "#FF9100",
-  },
-  {
-    name: "Calm",
-    value: 18,
-    color: "#75AEE1",
-  },
-  {
-    name: "Happy",
-    value: 9,
-    color: "#55B96A",
-  },
-];
+  if (
+    value === "female" ||
+    value === "girl"
+  ) {
+    return girlPhoto;
+  }
 
-const behavioralPatterns: BehavioralPattern[] = [
-  {
-    title: "School Anxiety",
-    prevalence: "85% prevalence",
-    icon: "school-outline",
-    iconColor: "#F15D65",
-    iconBackground: "#FFE7E8",
-    trend: "up",
-  },
-  {
-    title: "Sleep Disturbance",
-    prevalence: "60% prevalence",
-    icon: "moon-outline",
-    iconColor: "#338CF0",
-    iconBackground: "#EAF4FF",
-    trend: "down",
-  },
-  {
-    title: "Social Withdrawal",
-    prevalence: "45% prevalence",
-    icon: "people-outline",
-    iconColor: "#43B25B",
-    iconBackground: "#DDF8E2",
-    trend: "up",
-  },
-];
+  if (
+    value === "male" ||
+    value === "boy"
+  ) {
+    return boyPhoto;
+  }
 
-const attentionCases: AttentionCase[] = [
-  {
-    name: "Lily",
-    childId: "#1045",
-    indicator: "High Anxiety Indicators",
-    priority: "High Priority",
-    avatar: girlPhoto,
-  },
-  {
-    name: "Sammy",
-    childId: "#11045",
-    indicator: "Repeated Stress Indicators",
-    priority: "Medium Priority",
-    avatar: boyPhoto,
-  },
-];
+  return childPhoto;
+};
 
-/*
-  الأرقام هنا تمثل عدد التحليلات اليومية
-  المصنفة تحت كل حالة عاطفية.
-*/
-const weeklyTrendData: WeeklyTrendItem[] = [
-  {
-    day: "Mon",
-    anxiety: 3,
-    stress: 2,
-    calm: 1,
-  },
-  {
-    day: "Tue",
-    anxiety: 4,
-    stress: 3,
-    calm: 2,
-  },
-  {
-    day: "Wed",
-    anxiety: 2,
-    stress: 3,
-    calm: 1,
-  },
-  {
-    day: "Thu",
-    anxiety: 5,
-    stress: 4,
-    calm: 2,
-  },
-  {
-    day: "Fri",
-    anxiety: 3,
-    stress: 2,
-    calm: 2,
-  },
-  {
-    day: "Sat",
-    anxiety: 4,
-    stress: 3,
-    calm: 1,
-  },
-  {
-    day: "Sun",
-    anxiety: 2,
-    stress: 2,
-    calm: 1,
-  },
-];
+const normalizePercentage = (
+  value?: number
+): number => {
+  const numeric =
+    Number(value || 0);
 
-const weeklyEmotionLegend: WeeklyLegendItem[] = [
-  {
-    key: "anxiety",
-    label: "Anxiety",
-    color: "#EF6C73",
-  },
-  {
-    key: "stress",
-    label: "Stress",
-    color: "#F6B65F",
-  },
-  {
-    key: "calm",
-    label: "Calm",
-    color: "#75AEE1",
-  },
-];
+  if (
+    !Number.isFinite(
+      numeric
+    )
+  ) {
+    return 0;
+  }
 
-const WEEKLY_CHART_MAX_VALUE = 12;
-const WEEKLY_CHART_HEIGHT = 132;
+  return Math.max(
+    0,
+    Math.min(
+      100,
+      numeric
+    )
+  );
+};
+
+const formatNumber = (
+  value?: number
+): string => {
+  const numeric =
+    Number(value || 0);
+
+  return Number.isFinite(
+    numeric
+  )
+    ? String(numeric)
+    : "0";
+};
+
+const getErrorMessage = (
+  error: unknown
+): string => {
+  if (
+    !axios.isAxiosError(
+      error
+    )
+  ) {
+    return (
+      "Insights could not be loaded."
+    );
+  }
+
+  const data =
+    error.response?.data as
+      | {
+          message?: unknown;
+          error?: unknown;
+          detail?: unknown;
+        }
+      | undefined;
+
+  const message =
+    data?.message ??
+    data?.error ??
+    data?.detail;
+
+  if (
+    typeof message === "string" &&
+    message.trim()
+  ) {
+    return message;
+  }
+
+  return (
+    "Insights could not be loaded."
+  );
+};
+
+const getPatternIcon = (
+  pattern: string
+): {
+  icon: IoniconName;
+  iconColor: string;
+  iconBackground: string;
+} => {
+  const value =
+    pattern
+      .toLowerCase();
+
+  if (
+    value.includes(
+      "school"
+    )
+  ) {
+    return {
+      icon:
+        "school-outline",
+      iconColor:
+        "#F15D65",
+      iconBackground:
+        "#FFE7E8",
+    };
+  }
+
+  if (
+    value.includes(
+      "sleep"
+    )
+  ) {
+    return {
+      icon:
+        "moon-outline",
+      iconColor:
+        "#338CF0",
+      iconBackground:
+        "#EAF4FF",
+    };
+  }
+
+  if (
+    value.includes(
+      "social"
+    )
+  ) {
+    return {
+      icon:
+        "people-outline",
+      iconColor:
+        "#43B25B",
+      iconBackground:
+        "#DDF8E2",
+    };
+  }
+
+  if (
+    value.includes(
+      "anger"
+    ) ||
+    value.includes(
+      "stress"
+    )
+  ) {
+    return {
+      icon:
+        "warning-outline",
+      iconColor:
+        "#D99133",
+      iconBackground:
+        "#FFF5E8",
+    };
+  }
+
+  return {
+    icon:
+      "pulse-outline",
+    iconColor:
+      "#6D9EC8",
+    iconBackground:
+      "#EAF5FD",
+  };
+};
 
 export default function DoctorInsightsScreen() {
+  const [
+    weeklyStats,
+    setWeeklyStats,
+  ] =
+    useState<WeeklyStatsResponse>(
+      {}
+    );
+
+  const [
+    historyStats,
+    setHistoryStats,
+  ] =
+    useState<HistoryStatsResponse>(
+      {}
+    );
+
+  const [
+    dashboardStats,
+    setDashboardStats,
+  ] =
+    useState<DashboardStatsResponse>(
+      {}
+    );
+
+  const [
+    loading,
+    setLoading,
+  ] =
+    useState(true);
+
+  const [
+    refreshing,
+    setRefreshing,
+  ] =
+    useState(false);
+
+  const [
+    screenError,
+    setScreenError,
+  ] =
+    useState("");
+
+  const handleExpiredSession =
+    useCallback(async () => {
+      await AsyncStorage.multiRemove(
+        [
+          "token",
+          "user",
+        ]
+      );
+
+      router.replace(
+        "/auth/login" as Href
+      );
+    }, []);
+
+  const loadInsights =
+    useCallback(
+      async (
+        mode:
+          | "initial"
+          | "refresh" =
+          "initial"
+      ) => {
+        if (
+          mode === "refresh"
+        ) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
+
+        setScreenError("");
+
+        try {
+          const [
+            weeklyResponse,
+            historyResponse,
+            dashboardResponse,
+          ] =
+            await Promise.all([
+              API.get<WeeklyStatsResponse>(
+                "/doctor/weekly-stats"
+              ),
+
+              API.get<HistoryStatsResponse>(
+                "/doctor/history-stats"
+              ),
+
+              API.get<DashboardStatsResponse>(
+                "/doctor/dashboard-stats"
+              ),
+            ]);
+
+          setWeeklyStats(
+            weeklyResponse.data ||
+            {}
+          );
+
+          setHistoryStats(
+            historyResponse.data ||
+            {}
+          );
+
+          setDashboardStats(
+            dashboardResponse.data ||
+            {}
+          );
+        } catch (error) {
+          console.log(
+            "LOAD DOCTOR INSIGHTS ERROR:",
+            error
+          );
+
+          if (
+            axios.isAxiosError(
+              error
+            ) &&
+            error.response?.status ===
+              401
+          ) {
+            await handleExpiredSession();
+            return;
+          }
+
+          setScreenError(
+            getErrorMessage(
+              error
+            )
+          );
+        } finally {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      },
+      [
+        handleExpiredSession,
+      ]
+    );
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadInsights(
+        "initial"
+      );
+    }, [loadInsights])
+  );
+
+  const distributionData =
+    useMemo<
+      DistributionItem[]
+    >(() => {
+      const source =
+        Array.isArray(
+          weeklyStats.emotionStats
+        )
+          ? weeklyStats.emotionStats
+          : [];
+
+      return source
+        .filter(
+          (
+            item
+          ) =>
+            Boolean(
+              String(
+                item.emotion ||
+                ""
+              ).trim()
+            )
+        )
+        .map(
+          (
+            item,
+            index
+          ) => ({
+            name:
+              String(
+                item.emotion
+              ),
+
+            value:
+              normalizePercentage(
+                item.percentage
+              ),
+
+            count:
+              Number(
+                item.count || 0
+              ),
+
+            color:
+              EMOTION_COLORS[
+                index %
+                  EMOTION_COLORS.length
+              ],
+          })
+        );
+    }, [
+      weeklyStats.emotionStats,
+    ]);
+
+  const attentionCases =
+    useMemo<
+      AttentionCase[]
+    >(() => {
+      const source =
+        Array.isArray(
+          weeklyStats.attentionRequired
+        )
+          ? weeklyStats.attentionRequired
+          : [];
+
+      return source
+        .filter(
+          (
+            item
+          ) =>
+            Boolean(
+              item?._id
+            ) &&
+            Boolean(
+              item?.childId
+            )
+        )
+        .map(
+          (
+            item
+          ) => {
+            const child =
+              getChildData(
+                item.childId
+              );
+
+            return {
+              caseId:
+                item._id,
+
+              childId:
+                getChildId(
+                  item.childId
+                ),
+
+              name:
+                child.name ||
+                "Unknown child",
+
+              age:
+                typeof child.age ===
+                "number"
+                  ? child.age
+                  : null,
+
+              gender:
+                child.gender ||
+                "",
+
+              indicator:
+                item.aiDiagnosis ||
+                item.aiSummary ||
+                item.dominantEmotion ||
+                "High-priority case requires review.",
+
+              priority:
+                item.priority ||
+                "High",
+
+              avatar:
+                getAvatar(
+                  child.gender
+                ),
+            };
+          }
+        );
+    }, [
+      weeklyStats.attentionRequired,
+    ]);
+
+  const behavioralPatterns =
+    useMemo<
+      PatternItem[]
+    >(() => {
+      const source =
+        Array.isArray(
+          weeklyStats.attentionRequired
+        )
+          ? weeklyStats.attentionRequired
+          : [];
+
+      const counts =
+        new Map<
+          string,
+          number
+        >();
+
+      source.forEach(
+        (
+          caseItem
+        ) => {
+          const patterns =
+            Array.isArray(
+              caseItem.recurringPatterns
+            )
+              ? caseItem.recurringPatterns
+              : [];
+
+          patterns.forEach(
+            (
+              pattern
+            ) => {
+              if (
+                typeof pattern !==
+                  "string" ||
+                !pattern.trim()
+              ) {
+                return;
+              }
+
+              const cleanPattern =
+                pattern.trim();
+
+              counts.set(
+                cleanPattern,
+                (
+                  counts.get(
+                    cleanPattern
+                  ) || 0
+                ) + 1
+              );
+            }
+          );
+        }
+      );
+
+      const total =
+        Math.max(
+          1,
+          source.length
+        );
+
+      return Array.from(
+        counts.entries()
+      )
+        .sort(
+          (
+            first,
+            second
+          ) =>
+            second[1] -
+            first[1]
+        )
+        .slice(
+          0,
+          5
+        )
+        .map(
+          ([
+            title,
+            count,
+          ]) => ({
+            title,
+            count,
+
+            percentage:
+              Math.round(
+                (
+                  count /
+                  total
+                ) *
+                100
+              ),
+
+            ...getPatternIcon(
+              title
+            ),
+          })
+        );
+    }, [
+      weeklyStats.attentionRequired,
+    ]);
+
+  const weeklySummary =
+    weeklyStats.summary ||
+    {};
+
+  const aiSummary =
+    useMemo(() => {
+      if (
+        distributionData.length ===
+        0
+      ) {
+        return "No emotional distribution is available for the current week yet.";
+      }
+
+      const topEmotion =
+        distributionData[0];
+
+      return `${topEmotion.name} is the most frequent dominant emotion this week at ${topEmotion.value.toFixed(
+        1
+      )}%. ${Number(
+        weeklySummary.reviewedCases ||
+          0
+      )} cases were reviewed, while ${Number(
+        weeklySummary.activeCases ||
+          0
+      )} cases remain active.`;
+    }, [
+      distributionData,
+      weeklySummary.activeCases,
+      weeklySummary.reviewedCases,
+    ]);
+
   const openHome = () => {
-    router.replace("/doctor/home" as Href);
+    router.replace(
+      "/doctor/home" as Href
+    );
   };
 
   const openHistory = () => {
-    router.replace("/doctor/history" as Href);
+    router.replace(
+      "/doctor/history" as Href
+    );
   };
 
   const openProfile = () => {
-    router.replace("/doctor/profile" as Href);
+    router.replace(
+      "/doctor/profile" as Href
+    );
   };
 
   const openWeeklyReport = () => {
-    router.push("/doctor/weekly-summary" as Href);
+    router.push(
+      "/doctor/weekly-summary" as Href
+    );
   };
 
   const openCase = (
-    childName: string,
-    childId: string
+    item: AttentionCase
   ) => {
     router.push(
-      `/doctor/review-case?child=${encodeURIComponent(
-        childName
-      )}&childId=${encodeURIComponent(
-        childId
-      )}` as Href
+      {
+        pathname:
+          "/doctor/review-case",
+
+        params: {
+          caseId:
+            item.caseId,
+
+          childId:
+            item.childId,
+        },
+      } as Href
     );
   };
 
   return (
     <SafeAreaView
-      style={styles.safeArea}
+      style={
+        styles.safeArea
+      }
       edges={["top"]}
     >
       <StatusBar
@@ -280,287 +847,607 @@ export default function DoctorInsightsScreen() {
           "#FFF9F9",
           "#F8FCFF",
         ]}
-        locations={[0, 0.5, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.background}
+        locations={[
+          0,
+          0.5,
+          1,
+        ]}
+        start={{
+          x: 0,
+          y: 0,
+        }}
+        end={{
+          x: 1,
+          y: 1,
+        }}
+        style={
+          styles.background
+        }
       >
-        <View style={styles.mainContainer}>
-          <ScrollView
-            style={styles.scrollView}
-            contentContainerStyle={
-              styles.scrollContent
-            }
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
-            {/* Header */}
-            <View style={styles.header}>
-              <TouchableOpacity
-                style={styles.backButton}
-                activeOpacity={0.7}
-                onPress={() => router.back()}
+        <View
+          style={
+            styles.mainContainer
+          }
+        >
+          {loading ? (
+            <View
+              style={
+                styles.loadingState
+              }
+            >
+              <ActivityIndicator
+                size="large"
+                color="#6799C2"
+              />
+
+              <Text
+                style={
+                  styles.loadingText
+                }
               >
-                <Ionicons
-                  name="chevron-back"
-                  size={24}
-                  color="#1F2937"
-                />
-              </TouchableOpacity>
-
-              <Text style={styles.headerTitle}>
-                Insights
+                Loading insights...
               </Text>
-
-              <View style={styles.headerPlaceholder} />
             </View>
+          ) : (
+            <ScrollView
+              style={
+                styles.scrollView
+              }
+              contentContainerStyle={
+                styles.scrollContent
+              }
+              showsVerticalScrollIndicator={
+                false
+              }
+              refreshControl={
+                <RefreshControl
+                  refreshing={
+                    refreshing
+                  }
+                  onRefresh={() =>
+                    void loadInsights(
+                      "refresh"
+                    )
+                  }
+                  tintColor="#6799C2"
+                />
+              }
+            >
+              <View
+                style={
+                  styles.header
+                }
+              >
+                <TouchableOpacity
+                  style={
+                    styles.backButton
+                  }
+                  activeOpacity={0.7}
+                  onPress={() =>
+                    router.back()
+                  }
+                >
+                  <Ionicons
+                    name="chevron-back"
+                    size={24}
+                    color="#1F2937"
+                  />
+                </TouchableOpacity>
 
-            {/* Statistics */}
-            <View style={styles.statisticsGrid}>
-              {statistics.map((item) => (
+                <Text
+                  style={
+                    styles.headerTitle
+                  }
+                >
+                  Insights
+                </Text>
+
+                <TouchableOpacity
+                  style={
+                    styles.refreshButton
+                  }
+                  activeOpacity={0.7}
+                  disabled={
+                    refreshing
+                  }
+                  onPress={() =>
+                    void loadInsights(
+                      "refresh"
+                    )
+                  }
+                >
+                  <Ionicons
+                    name="refresh-outline"
+                    size={21}
+                    color="#1F2937"
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {screenError ? (
+                <View
+                  style={
+                    styles.errorBanner
+                  }
+                >
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={18}
+                    color="#C95860"
+                  />
+
+                  <Text
+                    style={
+                      styles.errorBannerText
+                    }
+                  >
+                    {screenError}
+                  </Text>
+
+                  <TouchableOpacity
+                    onPress={() =>
+                      void loadInsights(
+                        "refresh"
+                      )
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.retryText
+                      }
+                    >
+                      Retry
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              <View
+                style={
+                  styles.statisticsGrid
+                }
+              >
                 <StatisticCard
-                  key={item.title}
-                  {...item}
-                />
-              ))}
-            </View>
-
-            {/* AI Insight Summary */}
-            <View style={styles.aiSummaryCard}>
-              <View style={styles.aiTitleRow}>
-                <Ionicons
-                  name="sparkles"
-                  size={20}
-                  color="#40B75B"
+                  title="TOTAL CASES"
+                  value={formatNumber(
+                    historyStats.totalCases
+                  )}
+                  valueColor="#2084D4"
                 />
 
-                <Text style={styles.aiTitle}>
-                  AI INSIGHT SUMMARY
+                <StatisticCard
+                  title="ACTIVE CHILDREN"
+                  value={formatNumber(
+                    dashboardStats.childrenFollowed
+                  )}
+                  valueColor="#159647"
+                />
+
+                <StatisticCard
+                  title="REVIEWED CASES"
+                  value={formatNumber(
+                    historyStats.reviewed
+                  )}
+                  valueColor="#2084D4"
+                />
+
+                <StatisticCard
+                  title="PENDING CASES"
+                  value={formatNumber(
+                    historyStats.pending
+                  )}
+                  valueColor="#22262A"
+                />
+              </View>
+
+              <View
+                style={
+                  styles.aiSummaryCard
+                }
+              >
+                <View
+                  style={
+                    styles.aiTitleRow
+                  }
+                >
+                  <Ionicons
+                    name="sparkles"
+                    size={20}
+                    color="#40B75B"
+                  />
+
+                  <Text
+                    style={
+                      styles.aiTitle
+                    }
+                  >
+                    WEEKLY INSIGHT SUMMARY
+                  </Text>
+                </View>
+
+                <Text
+                  style={
+                    styles.aiSummaryText
+                  }
+                >
+                  {aiSummary}
                 </Text>
               </View>
 
-              <Text style={styles.aiSummaryText}>
-                Anxiety-related indicators continue to be
-                the most common emotional pattern this
-                week. Most children demonstrate stable
-                progress, while a smaller group may benefit
-                from additional monitoring and doctor
-                follow-up.
-              </Text>
-            </View>
-
-            {/* Emotional Distribution */}
-            <View style={styles.chartCard}>
-              <Text style={styles.cardTitle}>
-                Emotional Distribution
-              </Text>
-
-              <Text style={styles.chartDescription}>
-                Distribution of classified emotions across
-                submitted analyses.
-              </Text>
-
-              <View style={styles.distributionContent}>
-                <DonutChart data={distributionData} />
-
-                <View style={styles.distributionLegend}>
-                  {distributionData.map((item) => (
-                    <View
-                      key={item.name}
-                      style={styles.legendItem}
-                    >
-                      <View
-                        style={[
-                          styles.legendDot,
-                          {
-                            backgroundColor: item.color,
-                          },
-                        ]}
-                      />
-
-                      <Text style={styles.legendLabel}>
-                        {item.name} ({item.value}%)
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            </View>
-
-            {/* Weekly Emotional Trends */}
-            <WeeklyEmotionalTrendChart
-              data={weeklyTrendData}
-            />
-
-            {/* Common Behavioral Patterns */}
-            <Text style={styles.sectionTitle}>
-              Common Behavioral Patterns
-            </Text>
-
-            <View style={styles.patternsContainer}>
-              {behavioralPatterns.map((item) => (
-                <View
-                  key={item.title}
-                  style={styles.patternItem}
-                >
-                  <View
-                    style={[
-                      styles.patternIcon,
-                      {
-                        backgroundColor:
-                          item.iconBackground,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name={item.icon}
-                      size={21}
-                      color={item.iconColor}
-                    />
-                  </View>
-
-                  <View
-                    style={
-                      styles.patternTextContainer
-                    }
-                  >
-                    <Text style={styles.patternTitle}>
-                      {item.title}
-                    </Text>
-
-                    <Text
-                      style={styles.patternPrevalence}
-                    >
-                      {item.prevalence}
-                    </Text>
-                  </View>
-
-                  <Ionicons
-                    name={
-                      item.trend === "up"
-                        ? "trending-up-outline"
-                        : "trending-down-outline"
-                    }
-                    size={19}
-                    color={
-                      item.trend === "up"
-                        ? "#F0525B"
-                        : "#45B65D"
-                    }
-                  />
-                </View>
-              ))}
-            </View>
-
-            {/* Achievements */}
-            <View style={styles.achievementsCard}>
-              <Text style={styles.sectionTitle}>
-                Achievements
-              </Text>
-
               <View
-                style={styles.achievementsContainer}
-              >
-                <AchievementChip
-                  icon="shield-checkmark-outline"
-                  label="100+ Cases Reviewed"
-                  backgroundColor="#E6E8FF"
-                  color="#4852B8"
-                />
-
-                <AchievementChip
-                  icon="trending-up-outline"
-                  label="Top Response Rate"
-                  backgroundColor="#E2F3FC"
-                  color="#4C859E"
-                />
-
-                <AchievementChip
-                  icon="ribbon-outline"
-                  label="Verified Doctor"
-                  backgroundColor="#E8F4E8"
-                  color="#557A59"
-                />
-              </View>
-            </View>
-
-            {/* Children Requiring Attention */}
-            <Text style={styles.sectionTitle}>
-              Children Requiring Attention
-            </Text>
-
-            <View style={styles.attentionContainer}>
-              {attentionCases.map((item) => (
-                <AttentionCaseCard
-                  key={item.childId}
-                  {...item}
-                  onPress={() =>
-                    openCase(
-                      item.name,
-                      item.childId
-                    )
-                  }
-                />
-              ))}
-            </View>
-
-            {/* Your Performance */}
-            <View style={styles.performanceCard}>
-              <Text style={styles.performanceTitle}>
-                Your Performance
-              </Text>
-
-              <View style={styles.performanceStats}>
-                <PerformanceItem
-                  value="38"
-                  label="Cases Reviewed"
-                  valueColor="#202F99"
-                />
-
-                <PerformanceItem
-                  value="32"
-                  label="Responses Sent"
-                  valueColor="#202F99"
-                />
-
-                <PerformanceItem
-                  value="8 min"
-                  label="Avg Review"
-                  valueColor="#202522"
-                />
-              </View>
-            </View>
-
-            {/* Weekly Report */}
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={openWeeklyReport}
-              style={styles.weeklyReportButton}
-            >
-              <Text
                 style={
-                  styles.weeklyReportButtonText
+                  styles.chartCard
                 }
               >
-                View Weekly Report
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
+                <Text
+                  style={
+                    styles.cardTitle
+                  }
+                >
+                  Emotional Distribution
+                </Text>
 
-          {/* Bottom Navigation */}
-          <View style={styles.bottomNavigation}>
+                <Text
+                  style={
+                    styles.chartDescription
+                  }
+                >
+                  Distribution of dominant emotions across cases created during the last seven days.
+                </Text>
+
+                {distributionData.length >
+                0 ? (
+                  <View
+                    style={
+                      styles.distributionContent
+                    }
+                  >
+                    <DonutChart
+                      data={
+                        distributionData
+                      }
+                    />
+
+                    <View
+                      style={
+                        styles.distributionLegend
+                      }
+                    >
+                      {distributionData.map(
+                        (
+                          item
+                        ) => (
+                          <View
+                            key={
+                              item.name
+                            }
+                            style={
+                              styles.legendItem
+                            }
+                          >
+                            <View
+                              style={[
+                                styles.legendDot,
+
+                                {
+                                  backgroundColor:
+                                    item.color,
+                                },
+                              ]}
+                            />
+
+                            <View
+                              style={
+                                styles.legendTextArea
+                              }
+                            >
+                              <Text
+                                style={
+                                  styles.legendLabel
+                                }
+                              >
+                                {
+                                  item.name
+                                }
+                              </Text>
+
+                              <Text
+                                style={
+                                  styles.legendValue
+                                }
+                              >
+                                {item.value.toFixed(
+                                  1
+                                )}
+                                % ·{" "}
+                                {item.count}
+                              </Text>
+                            </View>
+                          </View>
+                        )
+                      )}
+                    </View>
+                  </View>
+                ) : (
+                  <EmptyState
+                    icon="pie-chart-outline"
+                    title="No weekly emotion data"
+                    description="Emotion distribution will appear after new cases are analyzed this week."
+                  />
+                )}
+              </View>
+
+              <WeeklyEmotionBreakdown
+                data={
+                  distributionData
+                }
+              />
+
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                Patterns in High-Priority Cases
+              </Text>
+
+              {behavioralPatterns.length >
+              0 ? (
+                <View
+                  style={
+                    styles.patternsContainer
+                  }
+                >
+                  {behavioralPatterns.map(
+                    (
+                      item
+                    ) => (
+                      <View
+                        key={
+                          item.title
+                        }
+                        style={
+                          styles.patternItem
+                        }
+                      >
+                        <View
+                          style={[
+                            styles.patternIcon,
+
+                            {
+                              backgroundColor:
+                                item.iconBackground,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name={
+                              item.icon
+                            }
+                            size={21}
+                            color={
+                              item.iconColor
+                            }
+                          />
+                        </View>
+
+                        <View
+                          style={
+                            styles.patternTextContainer
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.patternTitle
+                            }
+                          >
+                            {item.title}
+                          </Text>
+
+                          <Text
+                            style={
+                              styles.patternPrevalence
+                            }
+                          >
+                            {item.count}{" "}
+                            {item.count ===
+                            1
+                              ? "case"
+                              : "cases"}{" "}
+                            ·{" "}
+                            {item.percentage}
+                            %
+                          </Text>
+                        </View>
+                      </View>
+                    )
+                  )}
+                </View>
+              ) : (
+                <Text
+                  style={
+                    styles.emptyInlineText
+                  }
+                >
+                  No recurring patterns are available in the current high-priority cases.
+                </Text>
+              )}
+
+              <View
+                style={
+                  styles.achievementsCard
+                }
+              >
+                <Text
+                  style={
+                    styles.sectionTitle
+                  }
+                >
+                  Current Activity
+                </Text>
+
+                <View
+                  style={
+                    styles.achievementsContainer
+                  }
+                >
+                  <AchievementChip
+                    icon="shield-checkmark-outline"
+                    label={`${formatNumber(
+                      historyStats.reviewed
+                    )} Cases Reviewed`}
+                    backgroundColor="#E6E8FF"
+                    color="#4852B8"
+                  />
+
+                  <AchievementChip
+                    icon="add-circle-outline"
+                    label={`${formatNumber(
+                      weeklySummary.newCases
+                    )} New This Week`}
+                    backgroundColor="#E2F3FC"
+                    color="#4C859E"
+                  />
+
+                  <AchievementChip
+                    icon="people-outline"
+                    label={`${formatNumber(
+                      dashboardStats.childrenFollowed
+                    )} Children Followed`}
+                    backgroundColor="#E8F4E8"
+                    color="#557A59"
+                  />
+                </View>
+              </View>
+
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                Children Requiring Attention
+              </Text>
+
+              {attentionCases.length >
+              0 ? (
+                <View
+                  style={
+                    styles.attentionContainer
+                  }
+                >
+                  {attentionCases.map(
+                    (
+                      item
+                    ) => (
+                      <AttentionCaseCard
+                        key={
+                          item.caseId
+                        }
+                        item={
+                          item
+                        }
+                        onPress={() =>
+                          openCase(
+                            item
+                          )
+                        }
+                      />
+                    )
+                  )}
+                </View>
+              ) : (
+                <EmptyState
+                  icon="checkmark-circle-outline"
+                  title="No urgent cases"
+                  description="There are no high-priority pending cases assigned to you right now."
+                />
+              )}
+
+              <View
+                style={
+                  styles.performanceCard
+                }
+              >
+                <Text
+                  style={
+                    styles.performanceTitle
+                  }
+                >
+                  Your Performance
+                </Text>
+
+                <View
+                  style={
+                    styles.performanceStats
+                  }
+                >
+                  <PerformanceItem
+                    value={formatNumber(
+                      weeklySummary.reviewedCases
+                    )}
+                    label="Reviewed This Week"
+                    valueColor="#202F99"
+                  />
+
+                  <PerformanceItem
+                    value={formatNumber(
+                      weeklySummary.activeCases
+                    )}
+                    label="Active Cases"
+                    valueColor="#202F99"
+                  />
+
+                  <PerformanceItem
+                    value={`${formatNumber(
+                      historyStats.avgTimeMinutes
+                    )} min`}
+                    label="Avg Review"
+                    valueColor="#202522"
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={
+                  openWeeklyReport
+                }
+                style={
+                  styles.weeklyReportButton
+                }
+              >
+                <Text
+                  style={
+                    styles.weeklyReportButtonText
+                  }
+                >
+                  View Weekly Report
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+
+          <View
+            style={
+              styles.bottomNavigation
+            }
+          >
             <BottomNavItem
               icon="home-outline"
               activeIcon="home"
               label="Home"
-              onPress={openHome}
+              onPress={
+                openHome
+              }
             />
 
             <BottomNavItem
               icon="document-text-outline"
               activeIcon="document-text"
               label="History"
-              onPress={openHistory}
+              onPress={
+                openHistory
+              }
             />
 
             <BottomNavItem
@@ -568,14 +1455,18 @@ export default function DoctorInsightsScreen() {
               activeIcon="stats-chart"
               label="Insights"
               active
-              onPress={() => undefined}
+              onPress={() =>
+                undefined
+              }
             />
 
             <BottomNavItem
               icon="person-outline"
               activeIcon="person"
               label="Profile"
-              onPress={openProfile}
+              onPress={
+                openProfile
+              }
             />
           </View>
         </View>
@@ -588,18 +1479,32 @@ function StatisticCard({
   title,
   value,
   valueColor,
-}: StatisticItem) {
+}: {
+  title: string;
+  value: string;
+  valueColor: string;
+}) {
   return (
-    <View style={styles.statisticCard}>
-      <Text style={styles.statisticTitle}>
+    <View
+      style={
+        styles.statisticCard
+      }
+    >
+      <Text
+        style={
+          styles.statisticTitle
+        }
+      >
         {title}
       </Text>
 
       <Text
         style={[
           styles.statisticValue,
+
           {
-            color: valueColor,
+            color:
+              valueColor,
           },
         ]}
       >
@@ -612,20 +1517,36 @@ function StatisticCard({
 function DonutChart({
   data,
 }: {
-  data: DistributionItem[];
+  data:
+    DistributionItem[];
 }) {
-  const size = 126;
-  const strokeWidth = 28;
+  const size =
+    126;
+
+  const strokeWidth =
+    28;
+
   const radius =
-    (size - strokeWidth) / 2;
+    (
+      size -
+      strokeWidth
+    ) /
+    2;
 
   const circumference =
-    2 * Math.PI * radius;
+    2 *
+    Math.PI *
+    radius;
 
-  let accumulatedValue = 0;
+  let accumulatedValue =
+    0;
 
   return (
-    <View style={styles.donutWrapper}>
+    <View
+      style={
+        styles.donutWrapper
+      }
+    >
       <Svg
         width={size}
         height={size}
@@ -633,127 +1554,130 @@ function DonutChart({
       >
         <G
           rotation="-90"
-          origin={`${size / 2}, ${
-            size / 2
-          }`}
+          origin={`${size / 2}, ${size / 2}`}
         >
-          {data.map((item) => {
-            const segmentLength =
-              (item.value / 100) *
-              circumference;
+          {data.map(
+            (
+              item
+            ) => {
+              const segmentLength =
+                (
+                  item.value /
+                  100
+                ) *
+                circumference;
 
-            const strokeDashoffset =
-              -(
-                (accumulatedValue / 100) *
-                circumference
+              const strokeDashoffset =
+                -(
+                  (
+                    accumulatedValue /
+                    100
+                  ) *
+                  circumference
+                );
+
+              accumulatedValue +=
+                item.value;
+
+              return (
+                <Circle
+                  key={
+                    item.name
+                  }
+                  cx={
+                    size /
+                    2
+                  }
+                  cy={
+                    size /
+                    2
+                  }
+                  r={
+                    radius
+                  }
+                  fill="transparent"
+                  stroke={
+                    item.color
+                  }
+                  strokeWidth={
+                    strokeWidth
+                  }
+                  strokeDasharray={`${segmentLength} ${
+                    circumference -
+                    segmentLength
+                  }`}
+                  strokeDashoffset={
+                    strokeDashoffset
+                  }
+                  strokeLinecap="butt"
+                />
               );
-
-            accumulatedValue +=
-              item.value;
-
-            return (
-              <Circle
-                key={item.name}
-                cx={size / 2}
-                cy={size / 2}
-                r={radius}
-                fill="transparent"
-                stroke={item.color}
-                strokeWidth={strokeWidth}
-                strokeDasharray={`${segmentLength} ${
-                  circumference -
-                  segmentLength
-                }`}
-                strokeDashoffset={
-                  strokeDashoffset
-                }
-                strokeLinecap="butt"
-              />
-            );
-          })}
+            }
+          )}
         </G>
       </Svg>
 
-      <View style={styles.donutCenter}>
+      <View
+        style={
+          styles.donutCenter
+        }
+      >
         <Text
-          style={styles.donutCenterText}
+          style={
+            styles.donutCenterText
+          }
         >
-          100%
+          {data.reduce(
+            (
+              total,
+              item
+            ) =>
+              total +
+              item.count,
+            0
+          )}
+        </Text>
+
+        <Text
+          style={
+            styles.donutCenterLabel
+          }
+        >
+          cases
         </Text>
       </View>
     </View>
   );
 }
 
-function WeeklyEmotionalTrendChart({
+function WeeklyEmotionBreakdown({
   data,
 }: {
-  data: WeeklyTrendItem[];
+  data:
+    DistributionItem[];
 }) {
-  const enhancedData = useMemo(() => {
-    return data.map((item) => ({
-      ...item,
-      total:
-        item.anxiety +
-        item.stress +
-        item.calm,
-    }));
-  }, [data]);
-
-  const peakDay = useMemo(() => {
-    return enhancedData.reduce(
-      (highest, current) =>
-        current.total > highest.total
-          ? current
-          : highest,
-      enhancedData[0]
-    );
-  }, [enhancedData]);
-
-  const weeklyTotals = useMemo(() => {
-    return enhancedData.reduce(
-      (totals, item) => ({
-        anxiety:
-          totals.anxiety +
-          item.anxiety,
-
-        stress:
-          totals.stress +
-          item.stress,
-
-        calm:
-          totals.calm +
-          item.calm,
-
-        all:
-          totals.all +
-          item.total,
-      }),
-      {
-        anxiety: 0,
-        stress: 0,
-        calm: 0,
-        all: 0,
-      }
-    );
-  }, [enhancedData]);
-
-  const getSegmentHeight = (
-    value: number
-  ) => {
-    return (
-      (value /
-        WEEKLY_CHART_MAX_VALUE) *
-      WEEKLY_CHART_HEIGHT
-    );
-  };
-
   return (
-    <View style={styles.weeklyTrendCard}>
-      <View style={styles.weeklyTrendHeader}>
-        <View style={styles.weeklyTrendTitleArea}>
-          <Text style={styles.cardTitle}>
-            Weekly Emotional Trends
+    <View
+      style={
+        styles.weeklyTrendCard
+      }
+    >
+      <View
+        style={
+          styles.weeklyTrendHeader
+        }
+      >
+        <View
+          style={
+            styles.weeklyTrendTitleArea
+          }
+        >
+          <Text
+            style={
+              styles.cardTitle
+            }
+          >
+            Weekly Emotion Breakdown
           </Text>
 
           <Text
@@ -761,12 +1685,15 @@ function WeeklyEmotionalTrendChart({
               styles.weeklyTrendDescription
             }
           >
-            Number of daily analyses by
-            dominant emotion
+            Aggregated emotion counts returned by the weekly statistics endpoint.
           </Text>
         </View>
 
-        <View style={styles.weeklyPeriodBadge}>
+        <View
+          style={
+            styles.weeklyPeriodBadge
+          }
+        >
           <Ionicons
             name="calendar-outline"
             size={13}
@@ -778,301 +1705,107 @@ function WeeklyEmotionalTrendChart({
               styles.weeklyPeriodText
             }
           >
-            This Week
+            Last 7 Days
           </Text>
         </View>
       </View>
 
-      {/* Legend */}
-      <View style={styles.weeklyLegend}>
-        {weeklyEmotionLegend.map(
-          (item) => (
-            <View
-              key={item.key}
-              style={styles.weeklyLegendItem}
-            >
+      {data.length > 0 ? (
+        <View
+          style={
+            styles.breakdownList
+          }
+        >
+          {data.map(
+            (
+              item
+            ) => (
               <View
-                style={[
-                  styles.weeklyLegendDot,
-                  {
-                    backgroundColor:
-                      item.color,
-                  },
-                ]}
-              />
-
-              <Text
+                key={
+                  item.name
+                }
                 style={
-                  styles.weeklyLegendLabel
+                  styles.breakdownItem
                 }
               >
-                {item.label}
-              </Text>
-            </View>
-          )
-        )}
-      </View>
-
-      {/* Chart */}
-      <View style={styles.weeklyChartArea}>
-        {/* Y Axis */}
-        <View style={styles.yAxisContainer}>
-          <Text style={styles.yAxisLabel}>
-            12
-          </Text>
-
-          <Text style={styles.yAxisLabel}>
-            8
-          </Text>
-
-          <Text style={styles.yAxisLabel}>
-            4
-          </Text>
-
-          <Text style={styles.yAxisLabel}>
-            0
-          </Text>
-        </View>
-
-        {/* Grid and Bars */}
-        <View style={styles.chartContent}>
-          <View style={styles.weeklyGrid}>
-            <View
-              style={[
-                styles.gridLine,
-                styles.gridLineTop,
-              ]}
-            />
-
-            <View
-              style={[
-                styles.gridLine,
-                styles.gridLineSecond,
-              ]}
-            />
-
-            <View
-              style={[
-                styles.gridLine,
-                styles.gridLineThird,
-              ]}
-            />
-
-            <View
-              style={[
-                styles.gridLine,
-                styles.gridLineBottom,
-              ]}
-            />
-          </View>
-
-          <View style={styles.weeklyBarsContainer}>
-            {enhancedData.map((item) => {
-              const isPeakDay =
-                item.day === peakDay.day;
-
-              return (
                 <View
-                  key={item.day}
                   style={
-                    styles.weeklyBarColumn
+                    styles.breakdownTopRow
                   }
                 >
-                  <Text
-                    style={[
-                      styles.weeklyBarTotal,
-                      isPeakDay &&
-                        styles.weeklyBarTotalPeak,
-                    ]}
-                  >
-                    {item.total}
-                  </Text>
-
                   <View
-                    style={[
-                      styles.weeklyBarTrack,
-                      isPeakDay &&
-                        styles.weeklyBarTrackPeak,
-                    ]}
+                    style={
+                      styles.breakdownNameRow
+                    }
                   >
                     <View
                       style={[
-                        styles.weeklyBarSegment,
-                        styles.calmSegment,
+                        styles.breakdownDot,
+
                         {
-                          height:
-                            getSegmentHeight(
-                              item.calm
-                            ),
+                          backgroundColor:
+                            item.color,
                         },
                       ]}
                     />
 
-                    <View
-                      style={[
-                        styles.weeklyBarSegment,
-                        styles.stressSegment,
-                        {
-                          height:
-                            getSegmentHeight(
-                              item.stress
-                            ),
-                        },
-                      ]}
-                    />
-
-                    <View
-                      style={[
-                        styles.weeklyBarSegment,
-                        styles.anxietySegment,
-                        {
-                          height:
-                            getSegmentHeight(
-                              item.anxiety
-                            ),
-                        },
-                      ]}
-                    />
+                    <Text
+                      style={
+                        styles.breakdownName
+                      }
+                    >
+                      {item.name}
+                    </Text>
                   </View>
 
                   <Text
-                    style={[
-                      styles.weeklyDayLabel,
-                      isPeakDay &&
-                        styles.weeklyDayLabelPeak,
-                    ]}
+                    style={
+                      styles.breakdownValue
+                    }
                   >
-                    {item.day}
+                    {item.count} ·{" "}
+                    {item.value.toFixed(
+                      1
+                    )}
+                    %
                   </Text>
                 </View>
-              );
-            })}
-          </View>
+
+                <View
+                  style={
+                    styles.breakdownTrack
+                  }
+                >
+                  <View
+                    style={[
+                      styles.breakdownFill,
+
+                      {
+                        width:
+                          `${Math.max(
+                            2,
+                            item.value
+                          )}%`,
+
+                        backgroundColor:
+                          item.color,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            )
+          )}
         </View>
-      </View>
-
-      {/* Weekly Summary */}
-      <View style={styles.weeklyChartSummary}>
-        <View style={styles.peakDayCard}>
-          <View style={styles.peakDayIcon}>
-            <Ionicons
-              name="trending-up-outline"
-              size={18}
-              color="#D77C45"
-            />
-          </View>
-
-          <View style={styles.peakDayContent}>
-            <Text style={styles.peakDayLabel}>
-              Highest activity
-            </Text>
-
-            <Text style={styles.peakDayValue}>
-              {peakDay.day} · {peakDay.total} analyses
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.totalAnalysesCard}>
-          <Text
-            style={styles.totalAnalysesValue}
-          >
-            {weeklyTotals.all}
-          </Text>
-
-          <Text
-            style={styles.totalAnalysesLabel}
-          >
-            Weekly analyses
-          </Text>
-        </View>
-      </View>
-
-      {/* Emotion Totals */}
-      <View
-        style={styles.weeklyEmotionTotals}
-      >
-        <WeeklyEmotionTotal
-          label="Anxiety"
-          value={weeklyTotals.anxiety}
-          color="#EF6C73"
-          backgroundColor="#FFF0F1"
-        />
-
-        <WeeklyEmotionTotal
-          label="Stress"
-          value={weeklyTotals.stress}
-          color="#D99133"
-          backgroundColor="#FFF5E8"
-        />
-
-        <WeeklyEmotionTotal
-          label="Calm"
-          value={weeklyTotals.calm}
-          color="#4B8EC8"
-          backgroundColor="#EAF5FF"
-        />
-      </View>
-
-      <View style={styles.chartInformation}>
-        <Ionicons
-          name="information-circle-outline"
-          size={16}
-          color="#6E91AA"
-        />
-
+      ) : (
         <Text
           style={
-            styles.chartInformationText
+            styles.emptyInlineText
           }
         >
-          Each stacked bar shows the number of
-          analyses classified under each dominant
-          emotion on that day.
+          No weekly emotion data is available yet.
         </Text>
-      </View>
-    </View>
-  );
-}
-
-function WeeklyEmotionTotal({
-  label,
-  value,
-  color,
-  backgroundColor,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  backgroundColor: string;
-}) {
-  return (
-    <View
-      style={[
-        styles.weeklyEmotionTotalCard,
-        {
-          backgroundColor,
-        },
-      ]}
-    >
-      <Text
-        style={[
-          styles.weeklyEmotionTotalValue,
-          {
-            color,
-          },
-        ]}
-      >
-        {value}
-      </Text>
-
-      <Text
-        style={
-          styles.weeklyEmotionTotalLabel
-        }
-      >
-        {label}
-      </Text>
+      )}
     </View>
   );
 }
@@ -1092,6 +1825,7 @@ function AchievementChip({
     <View
       style={[
         styles.achievementChip,
+
         {
           backgroundColor,
         },
@@ -1106,6 +1840,7 @@ function AchievementChip({
       <Text
         style={[
           styles.achievementText,
+
           {
             color,
           },
@@ -1118,88 +1853,137 @@ function AchievementChip({
 }
 
 function AttentionCaseCard({
-  name,
-  childId,
-  indicator,
-  priority,
-  avatar,
+  item,
   onPress,
-}: AttentionCase & {
+}: {
+  item:
+    AttentionCase;
   onPress: () => void;
 }) {
-  const isHighPriority =
-    priority === "High Priority";
-
   return (
-    <View style={styles.caseCard}>
-      <View style={styles.caseDecoration} />
+    <View
+      style={
+        styles.caseCard
+      }
+    >
+      <View
+        style={
+          styles.caseDecoration
+        }
+      />
 
-      <View style={styles.caseHeader}>
+      <View
+        style={
+          styles.caseHeader
+        }
+      >
         <View
-          style={styles.childInformation}
+          style={
+            styles.childInformation
+          }
         >
-          <View style={styles.avatarWrapper}>
+          <View
+            style={
+              styles.avatarWrapper
+            }
+          >
             <Image
-              source={avatar}
-              style={styles.avatar}
+              source={
+                item.avatar
+              }
+              style={
+                styles.avatar
+              }
               contentFit="cover"
             />
           </View>
 
           <View
-            style={styles.childTextContainer}
+            style={
+              styles.childTextContainer
+            }
           >
-            <Text style={styles.childName}>
-              {name}
+            <Text
+              style={
+                styles.childName
+              }
+            >
+              {item.name}
             </Text>
 
-            <Text style={styles.childId}>
-              Child ID {childId}
+            <Text
+              style={
+                styles.childId
+              }
+            >
+              Child ID{" "}
+              {item.childId
+                ? `#${item.childId.slice(
+                    -6
+                  )}`
+                : "unavailable"}
+              {item.age !==
+              null
+                ? ` · ${item.age} years`
+                : ""}
             </Text>
           </View>
         </View>
 
         <View
-          style={[
-            styles.priorityBadge,
-            isHighPriority
-              ? styles.highPriorityBadge
-              : styles.mediumPriorityBadge,
-          ]}
+          style={
+            styles.highPriorityBadge
+          }
         >
           <Text
-            style={[
-              styles.priorityText,
-              isHighPriority
-                ? styles.highPriorityText
-                : styles.mediumPriorityText,
-            ]}
+            style={
+              styles.highPriorityText
+            }
           >
-            {priority}
+            {item.priority} Priority
           </Text>
         </View>
       </View>
 
-      <Text style={styles.indicatorText}>
-        {indicator}
+      <Text
+        style={
+          styles.indicatorText
+        }
+        numberOfLines={
+          3
+        }
+      >
+        {item.indicator}
       </Text>
 
       <TouchableOpacity
         activeOpacity={0.9}
         onPress={onPress}
-        style={styles.detailsButtonWrapper}
+        style={
+          styles.detailsButtonWrapper
+        }
       >
         <LinearGradient
           colors={[
             "#A4D1F6",
             "#F5ADB1",
           ]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={styles.detailsButton}
+          start={{
+            x: 0,
+            y: 0.5,
+          }}
+          end={{
+            x: 1,
+            y: 0.5,
+          }}
+          style={
+            styles.detailsButton
+          }
         >
           <Text
-            style={styles.detailsButtonText}
+            style={
+              styles.detailsButtonText
+            }
           >
             Review Case
           </Text>
@@ -1219,12 +2003,18 @@ function PerformanceItem({
   valueColor: string;
 }) {
   return (
-    <View style={styles.performanceItem}>
+    <View
+      style={
+        styles.performanceItem
+      }
+    >
       <Text
         style={[
           styles.performanceValue,
+
           {
-            color: valueColor,
+            color:
+              valueColor,
           },
         ]}
       >
@@ -1232,9 +2022,57 @@ function PerformanceItem({
       </Text>
 
       <Text
-        style={styles.performanceLabel}
+        style={
+          styles.performanceLabel
+        }
       >
         {label}
+      </Text>
+    </View>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+}: {
+  icon: IoniconName;
+  title: string;
+  description: string;
+}) {
+  return (
+    <View
+      style={
+        styles.emptyState
+      }
+    >
+      <View
+        style={
+          styles.emptyIcon
+        }
+      >
+        <Ionicons
+          name={icon}
+          size={30}
+          color="#78ACD5"
+        />
+      </View>
+
+      <Text
+        style={
+          styles.emptyTitle
+        }
+      >
+        {title}
+      </Text>
+
+      <Text
+        style={
+          styles.emptyDescription
+        }
+      >
+        {description}
       </Text>
     </View>
   );
@@ -1249,12 +2087,18 @@ function BottomNavItem({
 }: BottomNavItemProps) {
   return (
     <TouchableOpacity
-      style={styles.bottomNavItem}
+      style={
+        styles.bottomNavItem
+      }
       activeOpacity={0.75}
       onPress={onPress}
     >
       <Ionicons
-        name={active ? activeIcon : icon}
+        name={
+          active
+            ? activeIcon
+            : icon
+        }
         size={20}
         color={
           active
@@ -1266,6 +2110,7 @@ function BottomNavItem({
       <Text
         style={[
           styles.bottomNavLabel,
+
           active &&
             styles.bottomNavLabelActive,
         ]}
@@ -1276,796 +2121,668 @@ function BottomNavItem({
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-
-  background: {
-    flex: 1,
-  },
-
-  mainContainer: {
-    flex: 1,
-  },
-
-  scrollView: {
-    flex: 1,
-  },
-
-  scrollContent: {
-    paddingHorizontal: 18,
-    paddingTop: 4,
-    paddingBottom: 96,
-  },
-
-  header: {
-    height: 54,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "flex-start",
-  },
-
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#202428",
-  },
-
-  headerPlaceholder: {
-    width: 40,
-  },
-
-  statisticsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    rowGap: 9,
-    marginBottom: 16,
-  },
-
-  statisticCard: {
-    width: "48.5%",
-    minHeight: 67,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E4EDF3",
-    borderRadius: 10,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
-    shadowColor: "#9DABB5",
-    shadowOffset: {
-      width: 0,
-      height: 2,
+const styles =
+  StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
     },
-    shadowOpacity: 0.06,
-    shadowRadius: 5,
-    elevation: 1,
-  },
 
-  statisticTitle: {
-    fontSize: 8.5,
-    color: "#687078",
-  },
-
-  statisticValue: {
-    marginTop: 5,
-    fontSize: 17,
-    fontWeight: "700",
-  },
-
-  aiSummaryCard: {
-    backgroundColor: "#DEF6EA",
-    borderRadius: 15,
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 17,
-    marginBottom: 17,
-  },
-
-  aiTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-
-  aiTitle: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#36AF51",
-  },
-
-  aiSummaryText: {
-    marginTop: 13,
-    fontSize: 10.5,
-    lineHeight: 17,
-    color: "#55B96A",
-  },
-
-  chartCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingTop: 15,
-    paddingBottom: 15,
-    marginBottom: 17,
-    shadowColor: "#9EA9B1",
-    shadowOffset: {
-      width: 0,
-      height: 2,
+    background: {
+      flex: 1,
     },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 1,
-  },
 
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#292D31",
-  },
-
-  chartDescription: {
-    marginTop: 5,
-    fontSize: 8.5,
-    lineHeight: 13,
-    color: "#969CA2",
-  },
-
-  distributionContent: {
-    marginTop: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-  },
-
-  donutWrapper: {
-    width: 126,
-    height: 126,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  donutCenter: {
-    position: "absolute",
-    width: 49,
-    height: 49,
-    borderRadius: 24.5,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-  },
-
-  donutCenterText: {
-    fontSize: 9,
-    fontWeight: "600",
-    color: "#777D84",
-  },
-
-  distributionLegend: {
-    gap: 8,
-  },
-
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 6,
-  },
-
-  legendLabel: {
-    fontSize: 9.5,
-    color: "#34383C",
-  },
-
-  weeklyTrendCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 17,
-    paddingHorizontal: 13,
-    paddingTop: 15,
-    paddingBottom: 14,
-    marginBottom: 18,
-    shadowColor: "#9EA9B1",
-    shadowOffset: {
-      width: 0,
-      height: 2,
+    mainContainer: {
+      flex: 1,
     },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 1,
-  },
 
-  weeklyTrendHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-
-  weeklyTrendTitleArea: {
-    flex: 1,
-    paddingRight: 10,
-  },
-
-  weeklyTrendDescription: {
-    marginTop: 5,
-    fontSize: 8.5,
-    lineHeight: 13,
-    color: "#91989E",
-  },
-
-  weeklyPeriodBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#EEF6FD",
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-
-  weeklyPeriodText: {
-    fontSize: 7.5,
-    fontWeight: "600",
-    color: "#66859D",
-  },
-
-  weeklyLegend: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-    marginTop: 14,
-    marginBottom: 8,
-  },
-
-  weeklyLegendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-
-  weeklyLegendDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 3,
-  },
-
-  weeklyLegendLabel: {
-    fontSize: 8.5,
-    color: "#555C62",
-  },
-
-  weeklyChartArea: {
-    height: 188,
-    flexDirection: "row",
-    marginTop: 4,
-  },
-
-  yAxisContainer: {
-    width: 21,
-    height: 158,
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-    paddingTop: 4,
-    paddingBottom: 1,
-    paddingRight: 5,
-  },
-
-  yAxisLabel: {
-    fontSize: 7,
-    color: "#969CA2",
-  },
-
-  chartContent: {
-    flex: 1,
-    position: "relative",
-  },
-
-  weeklyGrid: {
-    position: "absolute",
-    top: 4,
-    left: 0,
-    right: 0,
-    height: 154,
-  },
-
-  gridLine: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: "#ECEFF1",
-  },
-
-  gridLineTop: {
-    top: 0,
-  },
-
-  gridLineSecond: {
-    top: 51,
-  },
-
-  gridLineThird: {
-    top: 102,
-  },
-
-  gridLineBottom: {
-    bottom: 0,
-    backgroundColor: "#DDE3E7",
-  },
-
-  weeklyBarsContainer: {
-    height: 188,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-  },
-
-  weeklyBarColumn: {
-    width: "13.3%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "flex-end",
-  },
-
-  weeklyBarTotal: {
-    marginBottom: 4,
-    fontSize: 7.5,
-    fontWeight: "600",
-    color: "#747B82",
-  },
-
-  weeklyBarTotalPeak: {
-    color: "#D97855",
-    fontWeight: "700",
-  },
-
-  weeklyBarTrack: {
-    width: 24,
-    height: WEEKLY_CHART_HEIGHT,
-    justifyContent: "flex-end",
-    overflow: "hidden",
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
-    backgroundColor: "#F5F7F8",
-  },
-
-  weeklyBarTrackPeak: {
-    borderWidth: 1,
-    borderColor: "#F0B8A5",
-    backgroundColor: "#FFF9F5",
-  },
-
-  weeklyBarSegment: {
-    width: "100%",
-    minHeight: 2,
-  },
-
-  calmSegment: {
-    backgroundColor: "#75AEE1",
-  },
-
-  stressSegment: {
-    backgroundColor: "#F6B65F",
-  },
-
-  anxietySegment: {
-    backgroundColor: "#EF6C73",
-  },
-
-  weeklyDayLabel: {
-    marginTop: 7,
-    fontSize: 7.5,
-    color: "#6A7178",
-  },
-
-  weeklyDayLabelPeak: {
-    fontWeight: "700",
-    color: "#D97855",
-  },
-
-  weeklyChartSummary: {
-    flexDirection: "row",
-    gap: 9,
-    marginTop: 7,
-  },
-
-  peakDayCard: {
-    flex: 1,
-    minHeight: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFF4E9",
-    borderRadius: 11,
-    paddingHorizontal: 9,
-  },
-
-  peakDayIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    marginRight: 8,
-  },
-
-  peakDayContent: {
-    flex: 1,
-  },
-
-  peakDayLabel: {
-    fontSize: 7.5,
-    color: "#9A7A61",
-  },
-
-  peakDayValue: {
-    marginTop: 3,
-    fontSize: 9.5,
-    fontWeight: "700",
-    color: "#795B43",
-  },
-
-  totalAnalysesCard: {
-    width: 88,
-    minHeight: 56,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#EEF6FD",
-    borderRadius: 11,
-  },
-
-  totalAnalysesValue: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#4D8EC1",
-  },
-
-  totalAnalysesLabel: {
-    marginTop: 2,
-    fontSize: 7,
-    color: "#708B9F",
-  },
-
-  weeklyEmotionTotals: {
-    flexDirection: "row",
-    gap: 7,
-    marginTop: 9,
-  },
-
-  weeklyEmotionTotalCard: {
-    flex: 1,
-    minHeight: 49,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 10,
-  },
-
-  weeklyEmotionTotalValue: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  weeklyEmotionTotalLabel: {
-    marginTop: 2,
-    fontSize: 7.5,
-    color: "#6D7379",
-  },
-
-  chartInformation: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 6,
-    backgroundColor: "#F2F8FC",
-    borderRadius: 10,
-    paddingHorizontal: 9,
-    paddingVertical: 9,
-    marginTop: 10,
-  },
-
-  chartInformationText: {
-    flex: 1,
-    fontSize: 7.8,
-    lineHeight: 12,
-    color: "#6D8799",
-  },
-
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#292D31",
-    marginBottom: 11,
-  },
-
-  patternsContainer: {
-    gap: 9,
-    marginBottom: 17,
-  },
-
-  patternItem: {
-    minHeight: 58,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 11,
-  },
-
-  patternIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 11,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 10,
-  },
-
-  patternTextContainer: {
-    flex: 1,
-  },
-
-  patternTitle: {
-    fontSize: 11.5,
-    fontWeight: "600",
-    color: "#292D31",
-  },
-
-  patternPrevalence: {
-    marginTop: 4,
-    fontSize: 9,
-    color: "#6E747B",
-  },
-
-  achievementsCard: {
-    backgroundColor: "#F7F7F8",
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingTop: 13,
-    paddingBottom: 13,
-    marginBottom: 18,
-  },
-
-  achievementsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 7,
-  },
-
-  achievementChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 7,
-  },
-
-  achievementText: {
-    fontSize: 8.5,
-    fontWeight: "500",
-  },
-
-  attentionContainer: {
-    gap: 11,
-    marginBottom: 17,
-  },
-
-  caseCard: {
-    position: "relative",
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E7E8EA",
-    borderRadius: 17,
-    paddingHorizontal: 11,
-    paddingTop: 11,
-    paddingBottom: 10,
-    overflow: "hidden",
-  },
-
-  caseDecoration: {
-    position: "absolute",
-    width: 67,
-    height: 67,
-    borderRadius: 33.5,
-    right: -18,
-    top: -17,
-    backgroundColor: "#FFF0F1",
-  },
-
-  caseHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-
-  childInformation: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  avatarWrapper: {
-    width: 43,
-    height: 43,
-    borderRadius: 21.5,
-    backgroundColor: "#FFF1EC",
-    borderWidth: 1,
-    borderColor: "#EEDDD7",
-    overflow: "hidden",
-    marginRight: 9,
-  },
-
-  avatar: {
-    width: "100%",
-    height: "100%",
-  },
-
-  childTextContainer: {
-    flex: 1,
-  },
-
-  childName: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#25282B",
-  },
-
-  childId: {
-    marginTop: 2,
-    fontSize: 8.5,
-    color: "#777D84",
-  },
-
-  priorityBadge: {
-    zIndex: 2,
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
-
-  highPriorityBadge: {
-    backgroundColor: "#FFE0E2",
-  },
-
-  mediumPriorityBadge: {
-    backgroundColor: "#DDF8E2",
-  },
-
-  priorityText: {
-    fontSize: 8,
-  },
-
-  highPriorityText: {
-    color: "#F05D65",
-  },
-
-  mediumPriorityText: {
-    color: "#45B65D",
-  },
-
-  indicatorText: {
-    marginTop: 8,
-    fontSize: 10,
-    color: "#74ADE2",
-  },
-
-  detailsButtonWrapper: {
-    marginTop: 9,
-  },
-
-  detailsButton: {
-    height: 34,
-    borderRadius: 999,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  detailsButtonText: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#25282C",
-  },
-
-  performanceCard: {
-    backgroundColor: "#F2EEFF",
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingTop: 13,
-    paddingBottom: 14,
-    marginBottom: 13,
-  },
-
-  performanceTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#292D31",
-  },
-
-  performanceStats: {
-    flexDirection: "row",
-    marginTop: 17,
-  },
-
-  performanceItem: {
-    flex: 1,
-    alignItems: "center",
-  },
-
-  performanceValue: {
-    fontSize: 21,
-    fontWeight: "700",
-  },
-
-  performanceLabel: {
-    marginTop: 4,
-    fontSize: 8,
-    color: "#60656B",
-    textAlign: "center",
-  },
-
-  weeklyReportButton: {
-    width: "100%",
-    height: 52,
-    borderRadius: 999,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#A9D0F3",
-    marginBottom: 4,
-  },
-
-  weeklyReportButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#22262A",
-  },
-
-  bottomNavigation: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 70,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    backgroundColor: "#FFFFFF",
-    borderTopWidth: 1,
-    borderTopColor: "#E9EAED",
-    paddingBottom: 6,
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: -2,
+    loadingState: {
+      flex: 1,
+      justifyContent:
+        "center",
+      alignItems:
+        "center",
+      paddingBottom: 70,
     },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 5,
-  },
 
-  bottomNavItem: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-  },
+    loadingText: {
+      marginTop: 12,
+      fontSize: 11,
+      color: "#7A8087",
+    },
 
-  bottomNavLabel: {
-    fontSize: 9,
-    color: "#A2A6AC",
-  },
+    scrollView: {
+      flex: 1,
+    },
 
-  bottomNavLabelActive: {
-    color: "#5E88A7",
-    fontWeight: "600",
-  },
-});
+    scrollContent: {
+      paddingHorizontal: 18,
+      paddingTop: 4,
+      paddingBottom: 96,
+    },
+
+    header: {
+      height: 54,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+    },
+
+    backButton: {
+      width: 40,
+      height: 40,
+      justifyContent:
+        "center",
+      alignItems:
+        "flex-start",
+    },
+
+    refreshButton: {
+      width: 40,
+      height: 40,
+      justifyContent:
+        "center",
+      alignItems:
+        "flex-end",
+    },
+
+    headerTitle: {
+      fontSize: 18,
+      fontWeight: "600",
+      color: "#202428",
+    },
+
+    errorBanner: {
+      marginBottom: 13,
+      borderRadius: 12,
+      backgroundColor: "#FFF0F1",
+      paddingHorizontal: 11,
+      paddingVertical: 9,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    errorBannerText: {
+      flex: 1,
+      marginHorizontal: 7,
+      fontSize: 9.5,
+      lineHeight: 14,
+      color: "#925A60",
+    },
+
+    retryText: {
+      fontSize: 9,
+      fontWeight: "700",
+      color: "#C95860",
+    },
+
+    statisticsGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      justifyContent:
+        "space-between",
+      rowGap: 9,
+      marginBottom: 16,
+    },
+
+    statisticCard: {
+      width: "48.5%",
+      minHeight: 67,
+      backgroundColor: "#FFFFFF",
+      borderWidth: 1,
+      borderColor: "#E4EDF3",
+      borderRadius: 10,
+      paddingHorizontal: 11,
+      paddingVertical: 10,
+    },
+
+    statisticTitle: {
+      fontSize: 8.5,
+      color: "#687078",
+    },
+
+    statisticValue: {
+      marginTop: 5,
+      fontSize: 17,
+      fontWeight: "700",
+    },
+
+    aiSummaryCard: {
+      backgroundColor: "#DEF6EA",
+      borderRadius: 15,
+      paddingHorizontal: 14,
+      paddingTop: 14,
+      paddingBottom: 17,
+      marginBottom: 17,
+    },
+
+    aiTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
+    },
+
+    aiTitle: {
+      fontSize: 14,
+      fontWeight: "500",
+      color: "#36AF51",
+    },
+
+    aiSummaryText: {
+      marginTop: 13,
+      fontSize: 10.5,
+      lineHeight: 17,
+      color: "#55B96A",
+    },
+
+    chartCard: {
+      backgroundColor: "#FFFFFF",
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      paddingTop: 15,
+      paddingBottom: 15,
+      marginBottom: 17,
+    },
+
+    cardTitle: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: "#292D31",
+    },
+
+    chartDescription: {
+      marginTop: 5,
+      fontSize: 8.5,
+      lineHeight: 13,
+      color: "#969CA2",
+    },
+
+    distributionContent: {
+      marginTop: 16,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-around",
+    },
+
+    donutWrapper: {
+      width: 126,
+      height: 126,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+
+    donutCenter: {
+      position: "absolute",
+      width: 49,
+      height: 49,
+      borderRadius: 24.5,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: "#FFFFFF",
+    },
+
+    donutCenterText: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: "#4E555B",
+    },
+
+    donutCenterLabel: {
+      marginTop: 1,
+      fontSize: 7,
+      color: "#8B9197",
+    },
+
+    distributionLegend: {
+      flex: 1,
+      marginLeft: 15,
+      gap: 9,
+    },
+
+    legendItem: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    legendDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      marginRight: 7,
+    },
+
+    legendTextArea: {
+      flex: 1,
+    },
+
+    legendLabel: {
+      fontSize: 9.5,
+      color: "#34383C",
+    },
+
+    legendValue: {
+      marginTop: 2,
+      fontSize: 7.5,
+      color: "#8A9096",
+    },
+
+    weeklyTrendCard: {
+      backgroundColor: "#FFFFFF",
+      borderRadius: 17,
+      paddingHorizontal: 13,
+      paddingTop: 15,
+      paddingBottom: 14,
+      marginBottom: 18,
+    },
+
+    weeklyTrendHeader: {
+      flexDirection: "row",
+      justifyContent:
+        "space-between",
+      alignItems:
+        "flex-start",
+    },
+
+    weeklyTrendTitleArea: {
+      flex: 1,
+      paddingRight: 10,
+    },
+
+    weeklyTrendDescription: {
+      marginTop: 5,
+      fontSize: 8.5,
+      lineHeight: 13,
+      color: "#91989E",
+    },
+
+    weeklyPeriodBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      backgroundColor: "#EEF6FD",
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      paddingVertical: 6,
+    },
+
+    weeklyPeriodText: {
+      fontSize: 7.5,
+      fontWeight: "600",
+      color: "#66859D",
+    },
+
+    breakdownList: {
+      marginTop: 17,
+      gap: 14,
+    },
+
+    breakdownItem: {
+      width: "100%",
+    },
+
+    breakdownTopRow: {
+      flexDirection: "row",
+      justifyContent:
+        "space-between",
+      alignItems: "center",
+      marginBottom: 7,
+    },
+
+    breakdownNameRow: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    breakdownDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      marginRight: 7,
+    },
+
+    breakdownName: {
+      fontSize: 9.5,
+      color: "#464C52",
+    },
+
+    breakdownValue: {
+      fontSize: 8.5,
+      fontWeight: "600",
+      color: "#727980",
+    },
+
+    breakdownTrack: {
+      height: 8,
+      borderRadius: 999,
+      overflow: "hidden",
+      backgroundColor: "#EDF0F2",
+    },
+
+    breakdownFill: {
+      height: "100%",
+      borderRadius: 999,
+    },
+
+    sectionTitle: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: "#292D31",
+      marginBottom: 11,
+    },
+
+    patternsContainer: {
+      gap: 9,
+      marginBottom: 17,
+    },
+
+    patternItem: {
+      minHeight: 58,
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: "#FFFFFF",
+      borderRadius: 12,
+      paddingHorizontal: 11,
+    },
+
+    patternIcon: {
+      width: 42,
+      height: 42,
+      borderRadius: 11,
+      justifyContent: "center",
+      alignItems: "center",
+      marginRight: 10,
+    },
+
+    patternTextContainer: {
+      flex: 1,
+    },
+
+    patternTitle: {
+      fontSize: 11.5,
+      fontWeight: "600",
+      color: "#292D31",
+    },
+
+    patternPrevalence: {
+      marginTop: 4,
+      fontSize: 9,
+      color: "#6E747B",
+    },
+
+    emptyInlineText: {
+      marginTop: -2,
+      marginBottom: 18,
+      backgroundColor: "#FFFFFF",
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 18,
+      fontSize: 9.5,
+      lineHeight: 15,
+      color: "#8C9298",
+      textAlign: "center",
+    },
+
+    achievementsCard: {
+      backgroundColor: "#F7F7F8",
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingTop: 13,
+      paddingBottom: 13,
+      marginBottom: 18,
+    },
+
+    achievementsContainer: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 7,
+    },
+
+    achievementChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      borderRadius: 999,
+      paddingHorizontal: 9,
+      paddingVertical: 7,
+    },
+
+    achievementText: {
+      fontSize: 8.5,
+      fontWeight: "500",
+    },
+
+    attentionContainer: {
+      gap: 11,
+      marginBottom: 17,
+    },
+
+    caseCard: {
+      position: "relative",
+      backgroundColor: "#FFFFFF",
+      borderWidth: 1,
+      borderColor: "#E7E8EA",
+      borderRadius: 17,
+      paddingHorizontal: 11,
+      paddingTop: 11,
+      paddingBottom: 10,
+      overflow: "hidden",
+    },
+
+    caseDecoration: {
+      position: "absolute",
+      width: 67,
+      height: 67,
+      borderRadius: 33.5,
+      right: -18,
+      top: -17,
+      backgroundColor: "#FFF0F1",
+    },
+
+    caseHeader: {
+      flexDirection: "row",
+      justifyContent:
+        "space-between",
+      alignItems:
+        "flex-start",
+    },
+
+    childInformation: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    avatarWrapper: {
+      width: 43,
+      height: 43,
+      borderRadius: 21.5,
+      backgroundColor: "#FFF1EC",
+      borderWidth: 1,
+      borderColor: "#EEDDD7",
+      overflow: "hidden",
+      marginRight: 9,
+    },
+
+    avatar: {
+      width: "100%",
+      height: "100%",
+    },
+
+    childTextContainer: {
+      flex: 1,
+    },
+
+    childName: {
+      fontSize: 15,
+      fontWeight: "700",
+      color: "#25282B",
+    },
+
+    childId: {
+      marginTop: 2,
+      fontSize: 8.5,
+      color: "#777D84",
+    },
+
+    highPriorityBadge: {
+      zIndex: 2,
+      borderRadius: 999,
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      backgroundColor: "#FFE0E2",
+    },
+
+    highPriorityText: {
+      fontSize: 8,
+      color: "#F05D65",
+    },
+
+    indicatorText: {
+      marginTop: 8,
+      fontSize: 10,
+      lineHeight: 15,
+      color: "#5F7181",
+    },
+
+    detailsButtonWrapper: {
+      marginTop: 9,
+    },
+
+    detailsButton: {
+      height: 34,
+      borderRadius: 999,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+
+    detailsButtonText: {
+      fontSize: 10,
+      fontWeight: "600",
+      color: "#25282C",
+    },
+
+    performanceCard: {
+      backgroundColor: "#F2EEFF",
+      borderRadius: 14,
+      paddingHorizontal: 12,
+      paddingTop: 13,
+      paddingBottom: 14,
+      marginBottom: 13,
+    },
+
+    performanceTitle: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: "#292D31",
+    },
+
+    performanceStats: {
+      flexDirection: "row",
+      marginTop: 17,
+    },
+
+    performanceItem: {
+      flex: 1,
+      alignItems: "center",
+    },
+
+    performanceValue: {
+      fontSize: 19,
+      fontWeight: "700",
+    },
+
+    performanceLabel: {
+      marginTop: 4,
+      paddingHorizontal: 3,
+      fontSize: 8,
+      color: "#60656B",
+      textAlign: "center",
+    },
+
+    weeklyReportButton: {
+      width: "100%",
+      height: 52,
+      borderRadius: 999,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: "#A9D0F3",
+      marginBottom: 4,
+    },
+
+    weeklyReportButtonText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: "#22262A",
+    },
+
+    emptyState: {
+      alignItems: "center",
+      backgroundColor: "#FFFFFF",
+      borderRadius: 14,
+      paddingHorizontal: 20,
+      paddingVertical: 25,
+      marginBottom: 17,
+    },
+
+    emptyIcon: {
+      width: 58,
+      height: 58,
+      borderRadius: 29,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: "#EDF7FF",
+    },
+
+    emptyTitle: {
+      marginTop: 12,
+      fontSize: 13,
+      fontWeight: "700",
+      color: "#30353A",
+    },
+
+    emptyDescription: {
+      marginTop: 6,
+      maxWidth: 260,
+      fontSize: 9.5,
+      lineHeight: 15,
+      color: "#8D9399",
+      textAlign: "center",
+    },
+
+    bottomNavigation: {
+      position: "absolute",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: 70,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-around",
+      backgroundColor: "#FFFFFF",
+      borderTopWidth: 1,
+      borderTopColor: "#E9EAED",
+      paddingBottom: 6,
+      elevation: 5,
+    },
+
+    bottomNavItem: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+    },
+
+    bottomNavLabel: {
+      fontSize: 9,
+      color: "#A2A6AC",
+    },
+
+    bottomNavLabelActive: {
+      color: "#5E88A7",
+      fontWeight: "600",
+    },
+  });

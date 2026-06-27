@@ -710,30 +710,34 @@ export default function AllCasesScreen() {
             )}
           </ScrollView>
 
-          <View
-            style={
-              styles.resultHeader
-            }
-          >
-            <Text
+          {cases.length > 0 ||
+          searchText.trim().length > 0 ||
+          selectedFilter !== "All" ? (
+            <View
               style={
-                styles.resultTitle
+                styles.resultHeader
               }
             >
-              Cases
-            </Text>
+              <Text
+                style={
+                  styles.resultTitle
+                }
+              >
+                Cases
+              </Text>
 
-            <Text
-              style={
-                styles.resultCount
-              }
-            >
-              {
-                filteredCases.length
-              }{" "}
-              results
-            </Text>
-          </View>
+              <Text
+                style={
+                  styles.resultCount
+                }
+              >
+                {
+                  filteredCases.length
+                }{" "}
+                results
+              </Text>
+            </View>
+          ) : null}
 
           {screenError ? (
             <View
@@ -837,7 +841,7 @@ export default function AllCasesScreen() {
                     />
                   )
                 )
-              ) : (
+              ) : screenError ? null : (
                 <View
                   style={
                     styles.emptyState
@@ -1281,6 +1285,7 @@ const styles =
     },
 
     scrollContent: {
+      flexGrow: 1,
       paddingBottom: 25,
       gap: 11,
     },
@@ -1425,10 +1430,12 @@ const styles =
     },
 
     emptyState: {
+      flex: 1,
+      minHeight: 300,
       alignItems: "center",
       justifyContent: "center",
-      paddingTop: 70,
       paddingHorizontal: 30,
+      paddingBottom: 45,
     },
 
     emptyIcon: {

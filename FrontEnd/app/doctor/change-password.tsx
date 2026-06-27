@@ -17,6 +17,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
+
+import API from "../api";
 
 type Errors = {
   currentPassword?: string;
@@ -30,13 +33,6 @@ type FeedbackType =
   | "incorrect"
   | "error"
   | null;
-
-type DemoDoctorCredentials = {
-  email: string;
-  password: string;
-};
-
-const FRONTEND_ONLY_MODE = true;
 
 export default function ChangePasswordScreen() {
   const [
@@ -69,6 +65,11 @@ export default function ChangePasswordScreen() {
 
   const [feedback, setFeedback] =
     useState<FeedbackType>(null);
+
+  const [
+    feedbackMessage,
+    setFeedbackMessage,
+  ] = useState("");
 
   const passwordRules = useMemo(
     () => ({
@@ -142,95 +143,91 @@ export default function ChangePasswordScreen() {
   };
 
   const handleSave = async () => {
-    if (saving || !validate()) return;
+    if (saving || !validate()) {
+      return;
+    }
 
     try {
       setSaving(true);
       setErrors({});
+      setFeedbackMessage("");
 
-      if (FRONTEND_ONLY_MODE) {
-        const savedCredentials =
-          await AsyncStorage.getItem(
-            "demoDoctorCredentials"
-          );
-
-        if (!savedCredentials) {
-          setErrors({
-            general:
-              "No saved doctor account was found. Please sign in again.",
-          });
-
-          return;
+      const response = await API.put(
+        "/auth/change-password",
+        {
+          currentPassword,
+          newPassword,
+          confirmPassword,
         }
+      );
 
-        let credentials: DemoDoctorCredentials;
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
 
-        try {
-          credentials = JSON.parse(
-            savedCredentials
-          ) as DemoDoctorCredentials;
-        } catch {
-          setErrors({
-            general:
-              "The saved account data is invalid. Please sign in again.",
-          });
+      setFeedbackMessage(
+        response.data?.message ||
+          "Password changed successfully."
+      );
 
-          return;
-        }
-
-        if (
-          credentials.password !==
-          currentPassword
-        ) {
-          setFeedback("incorrect");
-
-          return;
-        }
-
-        await AsyncStorage.setItem(
-          "demoDoctorCredentials",
-          JSON.stringify({
-            ...credentials,
-            password: newPassword,
-          })
-        );
-
-        await AsyncStorage.setItem(
-          "doctorPasswordUpdatedAt",
-          new Date().toISOString()
-        );
-
-        setCurrentPassword("");
-        setNewPassword("");
-        setConfirmPassword("");
-
-        setFeedback("success");
-
-        return;
-      }
-
-      /*
-        Backend mode:
-
-        استبدل الجزء التجريبي الموجود فوق
-        بطلب الـAPI الخاص بتغيير كلمة المرور.
-
-        مثال:
-
-        await API.patch(
-          "/doctor/change-password",
-          {
-            currentPassword,
-            newPassword,
-            confirmPassword,
-          }
-        );
-      */
+      setFeedback("success");
     } catch (error) {
       console.log(
         "Change password error:",
         error
       );
+
+      if (
+        axios.isAxiosError(error) &&
+        (
+          error.response?.status === 401 ||
+          error.response?.status === 403
+        )
+      ) {
+        await AsyncStorage.multiRemove([
+          "token",
+          "user",
+        ]);
+
+        router.replace(
+          "/auth/login" as any
+        );
+
+        return;
+      }
+
+      const responseData =
+        axios.isAxiosError(error)
+          ? error.response?.data
+          : undefined;
+
+      const message =
+        typeof responseData?.message ===
+          "string"
+          ? responseData.message
+          : typeof responseData?.msg ===
+              "string"
+            ? responseData.msg
+            : "Something went wrong while updating your password. Please try again.";
+
+      setFeedbackMessage(message);
+
+      const normalizedMessage =
+        message
+          .trim()
+          .toLowerCase();
+
+      if (
+        normalizedMessage.includes(
+          "current password"
+        ) ||
+        normalizedMessage.includes(
+          "كلمة المرور الحالية"
+        )
+      ) {
+        setFeedback("incorrect");
+        return;
+      }
 
       setFeedback("error");
     } finally {
@@ -254,6 +251,7 @@ export default function ChangePasswordScreen() {
         title: "Password updated",
 
         description:
+          feedbackMessage ||
           "Your password has been changed successfully. Use the new password the next time you sign in.",
 
         buttonText: "Done",
@@ -276,6 +274,7 @@ export default function ChangePasswordScreen() {
           "Current password is incorrect",
 
         description:
+          feedbackMessage ||
           "The password you entered does not match your current account password.",
 
         buttonText: "Try Again",
@@ -297,11 +296,15 @@ export default function ChangePasswordScreen() {
         "Password was not changed",
 
       description:
+        feedbackMessage ||
         "Something went wrong while updating your password. Please try again.",
 
       buttonText: "Try Again",
     };
-  }, [feedback]);
+  }, [
+    feedback,
+    feedbackMessage,
+  ]);
 
   return (
     <SafeAreaView

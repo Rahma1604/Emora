@@ -217,14 +217,14 @@ export default function DoctorProfileScreen() {
     specialization,
     setSpecialization,
   ] = useState(
-    "Child Psychology Specialist"
+    "Not provided"
   );
 
   const [
     professionalType,
     setProfessionalType,
   ] = useState(
-    "Child Psychiatrist"
+    "Not provided"
   );
 
   const [university, setUniversity] =
@@ -308,15 +308,13 @@ export default function DoctorProfileScreen() {
 
         setSpecialization(
           getDisplayValue(
-            doctorData.specialization,
-            "Child Psychology Specialist"
+            doctorData.specialization
           )
         );
 
         setProfessionalType(
           getDisplayValue(
-            doctorData.professionalType,
-            "Child Psychiatrist"
+            doctorData.professionalType
           )
         );
 

@@ -3,24 +3,41 @@ import React, {
   useMemo,
   useState,
 } from "react";
+
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
+  ActivityIndicator,
   Modal,
   Pressable,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
+
+import {
+  LinearGradient,
+} from "expo-linear-gradient";
+
+import {
+  Ionicons,
+} from "@expo/vector-icons";
+
 import {
   router,
   useFocusEffect,
 } from "expo-router";
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
+
+import API from "../api";
 
 type IoniconName =
   keyof typeof Ionicons.glyphMap;
@@ -38,16 +55,70 @@ type NotificationTarget =
   | "activity"
   | "progress"
   | "add-entry"
-  | "privacy";
+  | "privacy"
+  | "none";
 
 type ActivityFocusSection =
   | "analysis"
   | "doctor-response";
 
+type BackendChild = {
+  _id?: string;
+  id?: string;
+  name?: string;
+  age?: number | string;
+  gender?: string;
+};
+
+type BackendNotification = {
+  _id?: string;
+  id?: string;
+
+  title?: string;
+  message?: string;
+  description?: string;
+
+  type?: string;
+  target?: string;
+  focusSection?: string;
+
+  isRead?: boolean;
+  read?: boolean;
+
+  createdAt?: string;
+  updatedAt?: string;
+
+  childId?:
+    | string
+    | BackendChild
+    | null;
+
+  caseId?: string;
+  entryId?: string;
+  activityId?: string;
+
+  status?: string;
+  emotion?: string;
+
+  metadata?: {
+    caseId?: string;
+    entryId?: string;
+    activityId?: string;
+    emotion?: string;
+    status?: string;
+    activityType?: string;
+    [key: string]: unknown;
+  };
+
+  [key: string]: unknown;
+};
+
 type NotificationItem = {
   id: string;
+
   title: string;
   description: string;
+
   time: string;
   group: NotificationGroup;
   read: boolean;
@@ -63,6 +134,7 @@ type NotificationItem = {
   childName?: string;
   childAge?: string;
 
+  caseId?: string;
   activityId?: string;
   activityDate?: string;
   activityType?: string;
@@ -73,324 +145,907 @@ type NotificationItem = {
     | "Pending Review"
     | "Reviewed"
     | "Closed";
+
+  createdAtTimestamp: number;
 };
 
-const NOTIFICATIONS_STORAGE_KEY =
-  "parent_notifications";
+const getErrorMessage = (
+  error: unknown
+): string => {
+  if (
+    axios.isAxiosError(error)
+  ) {
+    const responseData =
+      error.response?.data as
+        | {
+            message?: unknown;
+            error?: unknown;
+            msg?: unknown;
+          }
+        | undefined;
 
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: "notification-1",
-    title: "Analysis Reviewed",
+    const message =
+      responseData?.message ??
+      responseData?.error ??
+      responseData?.msg;
+
+    if (
+      typeof message === "string" &&
+      message.trim()
+    ) {
+      return message;
+    }
+
+    if (
+      typeof error.message === "string" &&
+      error.message.trim()
+    ) {
+      return error.message;
+    }
+  }
+
+  return "Could not load notifications.";
+};
+
+const getChildId = (
+  value:
+    | BackendNotification["childId"]
+): string => {
+  if (
+    typeof value === "string"
+  ) {
+    return value;
+  }
+
+  if (
+    value &&
+    typeof value === "object"
+  ) {
+    return (
+      value._id ||
+      value.id ||
+      ""
+    );
+  }
+
+  return "";
+};
+
+const getNotificationDate = (
+  value?: string
+): Date | null => {
+  if (!value) {
+    return null;
+  }
+
+  const date =
+    new Date(value);
+
+  return Number.isNaN(
+    date.getTime()
+  )
+    ? null
+    : date;
+};
+
+const isSameCalendarDay = (
+  firstDate: Date,
+  secondDate: Date
+): boolean => {
+  return (
+    firstDate.getFullYear() ===
+      secondDate.getFullYear() &&
+    firstDate.getMonth() ===
+      secondDate.getMonth() &&
+    firstDate.getDate() ===
+      secondDate.getDate()
+  );
+};
+
+const getNotificationGroup = (
+  createdAt?: string
+): NotificationGroup => {
+  const date =
+    getNotificationDate(
+      createdAt
+    );
+
+  if (!date) {
+    return "Earlier";
+  }
+
+  const now =
+    new Date();
+
+  if (
+    isSameCalendarDay(
+      date,
+      now
+    )
+  ) {
+    return "Today";
+  }
+
+  const yesterday =
+    new Date(now);
+
+  yesterday.setDate(
+    now.getDate() - 1
+  );
+
+  if (
+    isSameCalendarDay(
+      date,
+      yesterday
+    )
+  ) {
+    return "Yesterday";
+  }
+
+  return "Earlier";
+};
+
+const getNotificationTime = (
+  createdAt?: string
+): string => {
+  const date =
+    getNotificationDate(
+      createdAt
+    );
+
+  if (!date) {
+    return "";
+  }
+
+  const now =
+    new Date();
+
+  const difference =
+    Math.max(
+      0,
+      now.getTime() -
+        date.getTime()
+    );
+
+  const minutes =
+    Math.floor(
+      difference /
+        60000
+    );
+
+  if (
+    isSameCalendarDay(
+      date,
+      now
+    )
+  ) {
+    if (
+      minutes < 1
+    ) {
+      return "Just now";
+    }
+
+    if (
+      minutes < 60
+    ) {
+      return `${minutes} min ago`;
+    }
+
+    const hours =
+      Math.floor(
+        minutes / 60
+      );
+
+    return `${hours} ${
+      hours === 1
+        ? "hour"
+        : "hours"
+    } ago`;
+  }
+
+  const yesterday =
+    new Date(now);
+
+  yesterday.setDate(
+    now.getDate() - 1
+  );
+
+  if (
+    isSameCalendarDay(
+      date,
+      yesterday
+    )
+  ) {
+    return "Yesterday";
+  }
+
+  return date.toLocaleDateString(
+    "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }
+  );
+};
+
+const getNotificationVisual = (
+  typeValue?: string,
+  titleValue?: string
+): {
+  icon: IoniconName;
+  iconColor: string;
+  iconBackground: string;
+} => {
+  const value =
+    `${typeValue || ""} ${
+      titleValue || ""
+    }`
+      .trim()
+      .toLowerCase();
+
+  if (
+    value.includes(
+      "recommend"
+    ) ||
+    value.includes(
+      "review"
+    ) ||
+    value.includes(
+      "response"
+    )
+  ) {
+    return {
+      icon:
+        "checkmark-circle-outline",
+      iconColor:
+        "#4D9A66",
+      iconBackground:
+        "#E7F7EC",
+    };
+  }
+
+  if (
+    value.includes(
+      "analysis"
+    ) ||
+    value.includes(
+      "ai"
+    )
+  ) {
+    return {
+      icon:
+        "sparkles-outline",
+      iconColor:
+        "#3976A4",
+      iconBackground:
+        "#EAF5FD",
+    };
+  }
+
+  if (
+    value.includes(
+      "progress"
+    ) ||
+    value.includes(
+      "improv"
+    )
+  ) {
+    return {
+      icon:
+        "trending-up-outline",
+      iconColor:
+        "#4D9A66",
+      iconBackground:
+        "#E7F7EC",
+    };
+  }
+
+  if (
+    value.includes(
+      "reminder"
+    ) ||
+    value.includes(
+      "check"
+    )
+  ) {
+    return {
+      icon:
+        "calendar-outline",
+      iconColor:
+        "#B65A61",
+      iconBackground:
+        "#FFF0F1",
+    };
+  }
+
+  if (
+    value.includes(
+      "privacy"
+    )
+  ) {
+    return {
+      icon:
+        "shield-checkmark-outline",
+      iconColor:
+        "#3976A4",
+      iconBackground:
+        "#EAF5FD",
+    };
+  }
+
+  return {
+    icon:
+      "notifications-outline",
+    iconColor:
+      "#8B74B8",
+    iconBackground:
+      "#F2ECFB",
+  };
+};
+
+const getNotificationTarget = (
+  notification:
+    BackendNotification,
+  childId: string
+): NotificationTarget => {
+  const explicitTarget =
+    String(
+      notification.target ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  if (
+    explicitTarget ===
+      "activity" ||
+    explicitTarget ===
+      "progress" ||
+    explicitTarget ===
+      "add-entry" ||
+    explicitTarget ===
+      "privacy"
+  ) {
+    return explicitTarget;
+  }
+
+  const value =
+    `${notification.type || ""} ${
+      notification.title || ""
+    }`
+      .trim()
+      .toLowerCase();
+
+  if (
+    value.includes(
+      "privacy"
+    )
+  ) {
+    return "privacy";
+  }
+
+  if (
+    value.includes(
+      "reminder"
+    ) ||
+    value.includes(
+      "check-in"
+    ) ||
+    value.includes(
+      "check_in"
+    ) ||
+    value.includes(
+      "weekly check"
+    )
+  ) {
+    return childId
+      ? "add-entry"
+      : "none";
+  }
+
+  if (
+    value.includes(
+      "analysis"
+    ) ||
+    value.includes(
+      "entry"
+    ) ||
+    value.includes(
+      "ai result"
+    )
+  ) {
+    return childId
+      ? "activity"
+      : "none";
+  }
+
+  if (
+    value.includes(
+      "recommend"
+    ) ||
+    value.includes(
+      "review"
+    ) ||
+    value.includes(
+      "response"
+    ) ||
+    value.includes(
+      "progress"
+    ) ||
+    value.includes(
+      "follow"
+    )
+  ) {
+    return childId
+      ? "progress"
+      : "none";
+  }
+
+  return childId
+    ? "progress"
+    : "none";
+};
+
+const normalizeStatus = (
+  value?: string
+):
+  | "Pending Review"
+  | "Reviewed"
+  | "Closed" => {
+  const status =
+    String(value || "")
+      .trim()
+      .toLowerCase();
+
+  if (
+    status === "closed"
+  ) {
+    return "Closed";
+  }
+
+  if (
+    status === "reviewed" ||
+    status === "improving"
+  ) {
+    return "Reviewed";
+  }
+
+  return "Pending Review";
+};
+
+const mapNotification = (
+  notification:
+    BackendNotification,
+  childrenById:
+    Map<string, BackendChild>
+): NotificationItem | null => {
+  const id =
+    notification._id ||
+    notification.id ||
+    "";
+
+  if (!id) {
+    return null;
+  }
+
+  const childId =
+    getChildId(
+      notification.childId
+    );
+
+  const populatedChild =
+    notification.childId &&
+    typeof notification.childId ===
+      "object"
+      ? notification.childId
+      : undefined;
+
+  const child =
+    populatedChild ||
+    childrenById.get(
+      childId
+    );
+
+  const createdAt =
+    notification.createdAt ||
+    notification.updatedAt ||
+    "";
+
+  const visual =
+    getNotificationVisual(
+      notification.type,
+      notification.title
+    );
+
+  const metadata =
+    notification.metadata ||
+    {};
+
+  const focusSectionValue =
+    String(
+      notification.focusSection ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+  const focusSection:
+    ActivityFocusSection =
+      focusSectionValue ===
+        "doctor-response" ||
+      String(
+        notification.type ||
+        ""
+      )
+        .toLowerCase()
+        .includes(
+          "recommend"
+        ) ||
+      String(
+        notification.title ||
+        ""
+      )
+        .toLowerCase()
+        .includes(
+          "review"
+        )
+        ? "doctor-response"
+        : "analysis";
+
+  return {
+    id,
+
+    title:
+      String(
+        notification.title ||
+        "New notification"
+      ),
+
     description:
-      "Dr. Ahmed reviewed Nada’s latest analysis and added a new recommendation.",
-    time: "10 min ago",
-    group: "Today",
-    read: false,
+      String(
+        notification.message ||
+        notification.description ||
+        "You have a new update."
+      ),
 
-    icon: "checkmark-circle-outline",
-    iconColor: "#4D9A66",
-    iconBackground: "#E7F7EC",
+    time:
+      getNotificationTime(
+        createdAt
+      ),
 
-    target: "activity",
-    focusSection: "doctor-response",
+    group:
+      getNotificationGroup(
+        createdAt
+      ),
 
-    childId: "nada-1",
-    childName: "Nada",
-    childAge: "12",
+    read:
+      Boolean(
+        notification.isRead ??
+        notification.read ??
+        false
+      ),
 
-    activityId: "activity-1",
-    activityDate: "Jun 22, 2026",
-    activityType: "Text Entry",
-    emotion: "Anxiety",
+    ...visual,
+
+    target:
+      getNotificationTarget(
+        notification,
+        childId
+      ),
+
+    focusSection,
+
+    childId:
+      childId ||
+      undefined,
+
+    childName:
+      child?.name ||
+      undefined,
+
+    childAge:
+      child?.age !==
+        undefined &&
+      child?.age !== null
+        ? String(
+            child.age
+          )
+        : undefined,
+
+    caseId:
+      notification.caseId ||
+      metadata.caseId ||
+      undefined,
+
+    activityId:
+      notification.activityId ||
+      notification.entryId ||
+      metadata.activityId ||
+      metadata.entryId ||
+      undefined,
+
+    activityDate:
+      createdAt ||
+      undefined,
+
+    activityType:
+      typeof metadata.activityType ===
+        "string"
+        ? metadata.activityType
+        : notification.type ||
+          "Update",
+
+    emotion:
+      notification.emotion ||
+      (
+        typeof metadata.emotion ===
+          "string"
+          ? metadata.emotion
+          : undefined
+      ),
 
     activityDescription:
-      "The results indicate mild anxiety indicators related to the school environment. It is recommended to monitor sleep patterns during the upcoming week.",
+      String(
+        notification.message ||
+        notification.description ||
+        ""
+      ),
 
-    status: "Reviewed",
-  },
+    status:
+      normalizeStatus(
+        notification.status ||
+        (
+          typeof metadata.status ===
+            "string"
+            ? metadata.status
+            : undefined
+        )
+      ),
 
-  {
-    id: "notification-2",
-    title: "New Analysis Ready",
-    description:
-      "The emotional analysis for Jojo’s latest entry is now available.",
-    time: "25 min ago",
-    group: "Today",
-    read: false,
-
-    icon: "sparkles-outline",
-    iconColor: "#3976A4",
-    iconBackground: "#EAF5FD",
-
-    target: "activity",
-    focusSection: "analysis",
-
-    childId: "jojo-1",
-    childName: "Jojo",
-    childAge: "11",
-
-    activityId: "activity-2",
-    activityDate: "Jun 22, 2026",
-    activityType: "Text Entry",
-    emotion: "Calm",
-
-    activityDescription:
-      "The latest entry shows a calm emotional state with improved focus and more stable behavioral responses.",
-
-    status: "Pending Review",
-  },
-
-  {
-    id: "notification-3",
-    title: "Positive Progress",
-    description:
-      "Nada’s recent entries show improvement in emotional stability and daily behavior.",
-    time: "2 hours ago",
-    group: "Today",
-    read: false,
-
-    icon: "trending-up-outline",
-    iconColor: "#4D9A66",
-    iconBackground: "#E7F7EC",
-
-    target: "progress",
-
-    childId: "nada-1",
-    childName: "Nada",
-    childAge: "12",
-  },
-
-  {
-    id: "notification-4",
-    title: "Weekly Check-in",
-    description:
-      "It’s time to add a new update about Jojo’s feelings and behavior this week.",
-    time: "Yesterday",
-    group: "Yesterday",
-    read: true,
-
-    icon: "calendar-outline",
-    iconColor: "#B65A61",
-    iconBackground: "#FFF0F1",
-
-    target: "add-entry",
-
-    childId: "jojo-1",
-    childName: "Jojo",
-    childAge: "11",
-  },
-
-  {
-    id: "notification-5",
-    title: "Specialist Recommendation",
-    description:
-      "A specialist added a recommendation to Nada’s previous emotional analysis.",
-    time: "Jun 20, 2026",
-    group: "Earlier",
-    read: true,
-
-    icon: "document-text-outline",
-    iconColor: "#8B74B8",
-    iconBackground: "#F2ECFB",
-
-    target: "activity",
-    focusSection: "doctor-response",
-
-    childId: "nada-1",
-    childName: "Nada",
-    childAge: "12",
-
-    activityId: "activity-3",
-    activityDate: "Jun 20, 2026",
-    activityType: "Text Entry",
-    emotion: "Stress",
-
-    activityDescription:
-      "The analysis indicates stress-related signs connected to changes in the child’s daily routine and school activities.",
-
-    status: "Closed",
-  },
-
-  {
-    id: "notification-6",
-    title: "Privacy Reminder",
-    description:
-      "Your identity remains hidden when specialists review your child’s entries.",
-    time: "Jun 18, 2026",
-    group: "Earlier",
-    read: true,
-
-    icon: "shield-checkmark-outline",
-    iconColor: "#3976A4",
-    iconBackground: "#EAF5FD",
-
-    target: "privacy",
-  },
-];
+    createdAtTimestamp:
+      getNotificationDate(
+        createdAt
+      )?.getTime() ||
+      0,
+  };
+};
 
 export default function NotificationsScreen() {
   const [
     selectedFilter,
     setSelectedFilter,
-  ] = useState<NotificationFilter>("All");
+  ] =
+    useState<NotificationFilter>(
+      "All"
+    );
 
   const [
     notifications,
     setNotifications,
-  ] = useState<NotificationItem[]>(
-    INITIAL_NOTIFICATIONS
-  );
+  ] =
+    useState<
+      NotificationItem[]
+    >([]);
+
+  const [
+    loading,
+    setLoading,
+  ] =
+    useState(true);
+
+  const [
+    refreshing,
+    setRefreshing,
+  ] =
+    useState(false);
+
+  const [
+    markingAll,
+    setMarkingAll,
+  ] =
+    useState(false);
+
+  const [
+    screenError,
+    setScreenError,
+  ] =
+    useState("");
 
   const [
     showPrivacyModal,
     setShowPrivacyModal,
-  ] = useState(false);
+  ] =
+    useState(false);
 
-  const saveNotifications = async (
-    updatedNotifications: NotificationItem[]
-  ) => {
-    setNotifications(updatedNotifications);
-
-    try {
-      await AsyncStorage.setItem(
-        NOTIFICATIONS_STORAGE_KEY,
-        JSON.stringify(updatedNotifications)
-      );
-    } catch (storageError) {
-      console.log(
-        "Save notifications error:",
-        storageError
-      );
-    }
-  };
-
-  const loadNotifications = async () => {
-    try {
-      const savedNotifications =
-        await AsyncStorage.getItem(
-          NOTIFICATIONS_STORAGE_KEY
+  const handleExpiredSession =
+    useCallback(
+      async () => {
+        await AsyncStorage.multiRemove(
+          [
+            "token",
+            "user",
+          ]
         );
 
-      if (!savedNotifications) {
-        await AsyncStorage.setItem(
-          NOTIFICATIONS_STORAGE_KEY,
-          JSON.stringify(
-            INITIAL_NOTIFICATIONS
-          )
+        router.replace(
+          "/auth/login" as any
         );
+      },
+      []
+    );
 
-        setNotifications(
-          INITIAL_NOTIFICATIONS
-        );
-
-        return;
-      }
-
-      const parsedNotifications =
-        JSON.parse(savedNotifications);
-
-      if (
-        !Array.isArray(
-          parsedNotifications
-        )
-      ) {
-        await AsyncStorage.setItem(
-          NOTIFICATIONS_STORAGE_KEY,
-          JSON.stringify(
-            INITIAL_NOTIFICATIONS
-          )
-        );
-
-        setNotifications(
-          INITIAL_NOTIFICATIONS
-        );
-
-        return;
-      }
-
-      const savedNotificationsById =
-        new Map<
-          string,
-          Partial<NotificationItem>
-        >();
-
-      parsedNotifications.forEach(
-        (
-          notification:
-            Partial<NotificationItem>
-        ) => {
-          if (notification.id) {
-            savedNotificationsById.set(
-              notification.id,
-              notification
-            );
-          }
+  const loadNotifications =
+    useCallback(
+      async (
+        mode:
+          | "initial"
+          | "refresh" =
+          "initial"
+      ) => {
+        if (
+          mode === "refresh"
+        ) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
         }
-      );
 
-      const mergedNotifications =
-        INITIAL_NOTIFICATIONS.map(
-          (notification) => {
-            const savedNotification =
-              savedNotificationsById.get(
-                notification.id
+        setScreenError("");
+
+        try {
+          const [
+            notificationResponse,
+            childrenResponse,
+          ] =
+            await Promise.all([
+              API.get<
+                BackendNotification[]
+              >(
+                "/children/my-notifications"
+              ),
+
+              API.get<
+                BackendChild[]
+              >(
+                "/children/all"
+              ),
+            ]);
+
+          const backendNotifications =
+            Array.isArray(
+              notificationResponse.data
+            )
+              ? notificationResponse.data
+              : [];
+
+          const children =
+            Array.isArray(
+              childrenResponse.data
+            )
+              ? childrenResponse.data
+              : [];
+
+          const childrenById =
+            new Map<
+              string,
+              BackendChild
+            >();
+
+          children.forEach(
+            (
+              child
+            ) => {
+              const childId =
+                child._id ||
+                child.id ||
+                "";
+
+              if (childId) {
+                childrenById.set(
+                  childId,
+                  child
+                );
+              }
+            }
+          );
+
+          const mappedNotifications =
+            backendNotifications
+              .map(
+                (
+                  notification
+                ) =>
+                  mapNotification(
+                    notification,
+                    childrenById
+                  )
+              )
+              .filter(
+                (
+                  notification
+                ): notification is NotificationItem =>
+                  notification !==
+                  null
+              )
+              .sort(
+                (
+                  first,
+                  second
+                ) =>
+                  second.createdAtTimestamp -
+                  first.createdAtTimestamp
               );
 
-            return {
-              ...notification,
+          setNotifications(
+            mappedNotifications
+          );
+        } catch (error) {
+          console.log(
+            "LOAD PARENT NOTIFICATIONS ERROR:",
+            error
+          );
 
-              read:
-                typeof savedNotification?.read ===
-                "boolean"
-                  ? savedNotification.read
-                  : notification.read,
-            };
+          if (
+            axios.isAxiosError(
+              error
+            ) &&
+            (
+              error.response?.status ===
+                401 ||
+              error.response?.status ===
+                403
+            )
+          ) {
+            await handleExpiredSession();
+            return;
           }
-        );
 
-      setNotifications(
-        mergedNotifications
-      );
-
-      await AsyncStorage.setItem(
-        NOTIFICATIONS_STORAGE_KEY,
-        JSON.stringify(
-          mergedNotifications
-        )
-      );
-    } catch (storageError) {
-      console.log(
-        "Load notifications error:",
-        storageError
-      );
-
-      setNotifications(
-        INITIAL_NOTIFICATIONS
-      );
-    }
-  };
+          setScreenError(
+            getErrorMessage(
+              error
+            )
+          );
+        } finally {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      },
+      [
+        handleExpiredSession,
+      ]
+    );
 
   useFocusEffect(
     useCallback(() => {
-      loadNotifications();
-    }, [])
+      void loadNotifications(
+        "initial"
+      );
+    }, [loadNotifications])
   );
 
-  const unreadCount = useMemo(() => {
-    return notifications.filter(
-      (notification) =>
-        !notification.read
-    ).length;
-  }, [notifications]);
+  const unreadCount =
+    useMemo(() => {
+      return notifications.filter(
+        (
+          notification
+        ) =>
+          !notification.read
+      ).length;
+    }, [
+      notifications,
+    ]);
 
   const filteredNotifications =
     useMemo(() => {
       if (
-        selectedFilter === "Unread"
+        selectedFilter ===
+        "Unread"
       ) {
         return notifications.filter(
-          (notification) =>
+          (
+            notification
+          ) =>
             !notification.read
         );
       }
@@ -404,67 +1059,207 @@ export default function NotificationsScreen() {
   const todayNotifications =
     useMemo(() => {
       return filteredNotifications.filter(
-        (notification) =>
+        (
+          notification
+        ) =>
           notification.group ===
           "Today"
       );
-    }, [filteredNotifications]);
+    }, [
+      filteredNotifications,
+    ]);
 
   const yesterdayNotifications =
     useMemo(() => {
       return filteredNotifications.filter(
-        (notification) =>
+        (
+          notification
+        ) =>
           notification.group ===
           "Yesterday"
       );
-    }, [filteredNotifications]);
+    }, [
+      filteredNotifications,
+    ]);
 
   const earlierNotifications =
     useMemo(() => {
       return filteredNotifications.filter(
-        (notification) =>
+        (
+          notification
+        ) =>
           notification.group ===
           "Earlier"
       );
-    }, [filteredNotifications]);
+    }, [
+      filteredNotifications,
+    ]);
 
   const markNotificationAsRead =
-    async (
-      notificationId: string
-    ) => {
-      const updatedNotifications =
-        notifications.map(
-          (notification) =>
-            notification.id ===
-            notificationId
-              ? {
-                  ...notification,
-                  read: true,
-                }
-              : notification
+    useCallback(
+      async (
+        notificationId: string
+      ) => {
+        const previousNotifications =
+          notifications;
+
+        setNotifications(
+          (
+            currentNotifications
+          ) =>
+            currentNotifications.map(
+              (
+                notification
+              ) =>
+                notification.id ===
+                notificationId
+                  ? {
+                      ...notification,
+                      read: true,
+                    }
+                  : notification
+            )
         );
 
-      await saveNotifications(
-        updatedNotifications
-      );
-    };
+        try {
+          await API.patch(
+            `/children/read/${notificationId}`
+          );
+        } catch (error) {
+          console.log(
+            "MARK PARENT NOTIFICATION READ ERROR:",
+            error
+          );
 
-  const markAllAsRead = async () => {
-    const updatedNotifications =
-      notifications.map(
-        (notification) => ({
-          ...notification,
-          read: true,
-        })
-      );
+          setNotifications(
+            previousNotifications
+          );
 
-    await saveNotifications(
-      updatedNotifications
+          if (
+            axios.isAxiosError(
+              error
+            ) &&
+            (
+              error.response?.status ===
+                401 ||
+              error.response?.status ===
+                403
+            )
+          ) {
+            await handleExpiredSession();
+            return;
+          }
+
+          setScreenError(
+            getErrorMessage(
+              error
+            )
+          );
+        }
+      },
+      [
+        handleExpiredSession,
+        notifications,
+      ]
     );
-  };
+
+  const markAllAsRead =
+    useCallback(
+      async () => {
+        if (
+          markingAll ||
+          unreadCount === 0
+        ) {
+          return;
+        }
+
+        const unreadIds =
+          notifications
+            .filter(
+              (
+                notification
+              ) =>
+                !notification.read
+            )
+            .map(
+              (
+                notification
+              ) =>
+                notification.id
+            );
+
+        setMarkingAll(true);
+        setScreenError("");
+
+        try {
+          await Promise.all(
+            unreadIds.map(
+              (
+                notificationId
+              ) =>
+                API.patch(
+                  `/children/read/${notificationId}`
+                )
+            )
+          );
+
+          setNotifications(
+            (
+              currentNotifications
+            ) =>
+              currentNotifications.map(
+                (
+                  notification
+                ) => ({
+                  ...notification,
+                  read: true,
+                })
+              )
+          );
+        } catch (error) {
+          console.log(
+            "MARK ALL PARENT NOTIFICATIONS READ ERROR:",
+            error
+          );
+
+          if (
+            axios.isAxiosError(
+              error
+            ) &&
+            (
+              error.response?.status ===
+                401 ||
+              error.response?.status ===
+                403
+            )
+          ) {
+            await handleExpiredSession();
+            return;
+          }
+
+          setScreenError(
+            "Some notifications could not be marked as read."
+          );
+
+          await loadNotifications(
+            "refresh"
+          );
+        } finally {
+          setMarkingAll(false);
+        }
+      },
+      [
+        handleExpiredSession,
+        loadNotifications,
+        markingAll,
+        notifications,
+        unreadCount,
+      ]
+    );
 
   const openActivityDetails = (
-    notification: NotificationItem
+    notification:
+      NotificationItem
   ) => {
     router.push(
       {
@@ -474,6 +1269,10 @@ export default function NotificationsScreen() {
         params: {
           activityId:
             notification.activityId ||
+            "",
+
+          caseId:
+            notification.caseId ||
             "",
 
           childId:
@@ -494,7 +1293,7 @@ export default function NotificationsScreen() {
 
           type:
             notification.activityType ||
-            "Text Entry",
+            "Update",
 
           emotion:
             notification.emotion ||
@@ -517,7 +1316,8 @@ export default function NotificationsScreen() {
   };
 
   const openChildProgress = (
-    notification: NotificationItem
+    notification:
+      NotificationItem
   ) => {
     router.push(
       {
@@ -536,13 +1336,18 @@ export default function NotificationsScreen() {
           childAge:
             notification.childAge ||
             "",
+
+          caseId:
+            notification.caseId ||
+            "",
         },
       } as any
     );
   };
 
   const openAddEntry = (
-    notification: NotificationItem
+    notification:
+      NotificationItem
   ) => {
     router.push(
       {
@@ -569,15 +1374,14 @@ export default function NotificationsScreen() {
     );
   };
 
-  const openPrivacyModal = () => {
-    setShowPrivacyModal(true);
-  };
-
   const handleNotificationPress =
     async (
-      notification: NotificationItem
+      notification:
+        NotificationItem
     ) => {
-      if (!notification.read) {
+      if (
+        !notification.read
+      ) {
         await markNotificationAsRead(
           notification.id
         );
@@ -605,7 +1409,9 @@ export default function NotificationsScreen() {
           break;
 
         case "privacy":
-          openPrivacyModal();
+          setShowPrivacyModal(
+            true
+          );
           break;
 
         default:
@@ -614,14 +1420,17 @@ export default function NotificationsScreen() {
     };
 
   const renderNotification = (
-    notification: NotificationItem
+    notification:
+      NotificationItem
   ) => {
     return (
       <TouchableOpacity
-        key={notification.id}
+        key={
+          notification.id
+        }
         activeOpacity={0.82}
         onPress={() =>
-          handleNotificationPress(
+          void handleNotificationPress(
             notification
           )
         }
@@ -634,7 +1443,9 @@ export default function NotificationsScreen() {
       >
         {!notification.read ? (
           <View
-            style={styles.unreadDot}
+            style={
+              styles.unreadDot
+            }
           />
         ) : null}
 
@@ -649,7 +1460,9 @@ export default function NotificationsScreen() {
           ]}
         >
           <Ionicons
-            name={notification.icon}
+            name={
+              notification.icon
+            }
             size={20}
             color={
               notification.iconColor
@@ -676,7 +1489,9 @@ export default function NotificationsScreen() {
               ]}
               numberOfLines={1}
             >
-              {notification.title}
+              {
+                notification.title
+              }
             </Text>
 
             <Text
@@ -684,7 +1499,9 @@ export default function NotificationsScreen() {
                 styles.notificationTime
               }
             >
-              {notification.time}
+              {
+                notification.time
+              }
             </Text>
           </View>
 
@@ -704,14 +1521,17 @@ export default function NotificationsScreen() {
           name="chevron-forward"
           size={18}
           color="#A7ABB0"
-          style={styles.chevronIcon}
+          style={
+            styles.chevronIcon
+          }
         />
       </TouchableOpacity>
     );
   };
 
   const renderSection = (
-    title: NotificationGroup,
+    title:
+      NotificationGroup,
     sectionNotifications:
       NotificationItem[]
   ) => {
@@ -723,7 +1543,11 @@ export default function NotificationsScreen() {
     }
 
     return (
-      <View style={styles.section}>
+      <View
+        style={
+          styles.section
+        }
+      >
         <View
           style={
             styles.sectionHeader
@@ -748,9 +1572,11 @@ export default function NotificationsScreen() {
           </Text>
         </View>
 
-        {sectionNotifications.map(
-          renderNotification
-        )}
+        {
+          sectionNotifications.map(
+            renderNotification
+          )
+        }
       </View>
     );
   };
@@ -761,7 +1587,9 @@ export default function NotificationsScreen() {
 
   return (
     <SafeAreaView
-      style={styles.safeArea}
+      style={
+        styles.safeArea
+      }
       edges={["top"]}
     >
       <StatusBar
@@ -788,13 +1616,19 @@ export default function NotificationsScreen() {
           x: 1,
           y: 1,
         }}
-        style={styles.background}
+        style={
+          styles.background
+        }
       >
         <View
-          style={styles.container}
+          style={
+            styles.container
+          }
         >
           <View
-            style={styles.header}
+            style={
+              styles.header
+            }
           >
             <TouchableOpacity
               activeOpacity={0.75}
@@ -832,7 +1666,8 @@ export default function NotificationsScreen() {
               >
                 {unreadCount > 0
                   ? `${unreadCount} unread ${
-                      unreadCount === 1
+                      unreadCount ===
+                      1
                         ? "notification"
                         : "notifications"
                     }`
@@ -842,28 +1677,75 @@ export default function NotificationsScreen() {
 
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={
-                markAllAsRead
+              onPress={() =>
+                void markAllAsRead()
               }
               disabled={
-                unreadCount === 0
+                unreadCount === 0 ||
+                markingAll
               }
               style={
                 styles.markAllButton
               }
             >
-              <Text
-                style={[
-                  styles.markAllText,
+              {markingAll ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#5E88A7"
+                />
+              ) : (
+                <Text
+                  style={[
+                    styles.markAllText,
 
-                  unreadCount === 0 &&
-                    styles.markAllTextDisabled,
-                ]}
-              >
-                Mark all as read
-              </Text>
+                    unreadCount ===
+                      0 &&
+                      styles.markAllTextDisabled,
+                  ]}
+                >
+                  Mark all as read
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
+
+          {screenError ? (
+            <View
+              style={
+                styles.errorBanner
+              }
+            >
+              <Ionicons
+                name="alert-circle-outline"
+                size={18}
+                color="#C95860"
+              />
+
+              <Text
+                style={
+                  styles.errorBannerText
+                }
+              >
+                {screenError}
+              </Text>
+
+              <TouchableOpacity
+                onPress={() =>
+                  void loadNotifications(
+                    "refresh"
+                  )
+                }
+              >
+                <Text
+                  style={
+                    styles.retryText
+                  }
+                >
+                  Retry
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           <View
             style={
@@ -967,120 +1849,157 @@ export default function NotificationsScreen() {
                       styles.filterCountTextActive,
                   ]}
                 >
-                  {unreadCount}
+                  {
+                    unreadCount
+                  }
                 </Text>
               </View>
             </TouchableOpacity>
           </View>
 
-          <ScrollView
-            style={styles.scrollView}
-            contentContainerStyle={
-              styles.scrollContent
-            }
-            showsVerticalScrollIndicator={
-              false
-            }
-            bounces={false}
-          >
-            {hasNoNotifications ? (
-              <View
-                style={
-                  styles.emptyState
-                }
-              >
-                <View
-                  style={
-                    styles.emptyIcon
-                  }
-                >
-                  <Ionicons
-                    name="notifications-off-outline"
-                    size={32}
-                    color="#78ACD5"
-                  />
-                </View>
-
-                <Text
-                  style={
-                    styles.emptyTitle
-                  }
-                >
-                  {selectedFilter ===
-                  "Unread"
-                    ? "No unread notifications"
-                    : "No notifications yet"}
-                </Text>
-
-                <Text
-                  style={
-                    styles.emptyDescription
-                  }
-                >
-                  New updates about your
-                  children, analyses and
-                  specialist reviews will
-                  appear here.
-                </Text>
-
-                {selectedFilter ===
-                "Unread" ? (
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() =>
-                      setSelectedFilter(
-                        "All"
-                      )
-                    }
-                    style={
-                      styles.showAllButton
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.showAllButtonText
-                      }
-                    >
-                      Show all
-                      notifications
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            ) : (
-              <>
-                {renderSection(
-                  "Today",
-                  todayNotifications
-                )}
-
-                {renderSection(
-                  "Yesterday",
-                  yesterdayNotifications
-                )}
-
-                {renderSection(
-                  "Earlier",
-                  earlierNotifications
-                )}
-              </>
-            )}
-
+          {loading ? (
             <View
               style={
-                styles.bottomSpace
+                styles.loadingState
               }
-            />
-          </ScrollView>
+            >
+              <ActivityIndicator
+                size="large"
+                color="#78ACD5"
+              />
+
+              <Text
+                style={
+                  styles.loadingText
+                }
+              >
+                Loading notifications...
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              style={
+                styles.scrollView
+              }
+              contentContainerStyle={
+                styles.scrollContent
+              }
+              showsVerticalScrollIndicator={
+                false
+              }
+              refreshControl={
+                <RefreshControl
+                  refreshing={
+                    refreshing
+                  }
+                  onRefresh={() =>
+                    void loadNotifications(
+                      "refresh"
+                    )
+                  }
+                  tintColor="#78ACD5"
+                />
+              }
+            >
+              {hasNoNotifications ? (
+                <View
+                  style={
+                    styles.emptyState
+                  }
+                >
+                  <View
+                    style={
+                      styles.emptyIcon
+                    }
+                  >
+                    <Ionicons
+                      name="notifications-off-outline"
+                      size={32}
+                      color="#78ACD5"
+                    />
+                  </View>
+
+                  <Text
+                    style={
+                      styles.emptyTitle
+                    }
+                  >
+                    {selectedFilter ===
+                    "Unread"
+                      ? "No unread notifications"
+                      : "No notifications yet"}
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.emptyDescription
+                    }
+                  >
+                    New updates about your children, analyses and specialist reviews will appear here.
+                  </Text>
+
+                  {selectedFilter ===
+                  "Unread" ? (
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() =>
+                        setSelectedFilter(
+                          "All"
+                        )
+                      }
+                      style={
+                        styles.showAllButton
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.showAllButtonText
+                        }
+                      >
+                        Show all notifications
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ) : (
+                <>
+                  {renderSection(
+                    "Today",
+                    todayNotifications
+                  )}
+
+                  {renderSection(
+                    "Yesterday",
+                    yesterdayNotifications
+                  )}
+
+                  {renderSection(
+                    "Earlier",
+                    earlierNotifications
+                  )}
+                </>
+              )}
+
+              <View
+                style={
+                  styles.bottomSpace
+                }
+              />
+            </ScrollView>
+          )}
         </View>
       </LinearGradient>
 
       <Modal
-        visible={showPrivacyModal}
+        visible={
+          showPrivacyModal
+        }
         transparent
         animationType="fade"
         onRequestClose={() =>
-          setShowPrivacyModal(false)
+          setShowPrivacyModal(
+            false
+          )
         }
       >
         <View
@@ -1093,7 +2012,9 @@ export default function NotificationsScreen() {
               StyleSheet.absoluteFillObject
             }
             onPress={() =>
-              setShowPrivacyModal(false)
+              setShowPrivacyModal(
+                false
+              )
             }
           />
 
@@ -1127,10 +2048,7 @@ export default function NotificationsScreen() {
                 styles.privacyModalDescription
               }
             >
-              Your personal identity and
-              account information remain
-              hidden when specialists
-              review your child’s entries.
+              Your personal identity and account information remain hidden when specialists review your child’s entries.
             </Text>
 
             <View
@@ -1138,99 +2056,18 @@ export default function NotificationsScreen() {
                 styles.privacyPointsContainer
               }
             >
-              <View
-                style={
-                  styles.privacyPointRow
-                }
-              >
-                <Ionicons
-                  name="checkmark-circle"
-                  size={17}
-                  color="#4D9A66"
-                />
-
-                <Text
-                  style={
-                    styles.privacyPointText
-                  }
-                >
-                  Specialists cannot see
-                  your real name or personal
-                  account details.
-                </Text>
-              </View>
-
-              <View
-                style={
-                  styles.privacyPointRow
-                }
-              >
-                <Ionicons
-                  name="checkmark-circle"
-                  size={17}
-                  color="#4D9A66"
-                />
-
-                <Text
-                  style={
-                    styles.privacyPointText
-                  }
-                >
-                  They only see the child’s
-                  nickname or identification
-                  number.
-                </Text>
-              </View>
-
-              <View
-                style={
-                  styles.privacyPointRow
-                }
-              >
-                <Ionicons
-                  name="checkmark-circle"
-                  size={17}
-                  color="#4D9A66"
-                />
-
-                <Text
-                  style={
-                    styles.privacyPointText
-                  }
-                >
-                  The specialist’s name and
-                  specialization remain
-                  visible to you.
-                </Text>
-              </View>
-
-              <View
-                style={
-                  styles.privacyPointRow
-                }
-              >
-                <Ionicons
-                  name="checkmark-circle"
-                  size={17}
-                  color="#4D9A66"
-                />
-
-                <Text
-                  style={
-                    styles.privacyPointText
-                  }
-                >
-                  Your information is used
-                  only to provide emotional
-                  and behavioral support.
-                </Text>
-              </View>
+              <PrivacyPoint text="Specialists cannot see your real name or personal account details." />
+              <PrivacyPoint text="They only see the child’s nickname or identification number." />
+              <PrivacyPoint text="The specialist’s name and specialization remain visible to you." />
+              <PrivacyPoint text="Your information is used only to provide emotional and behavioral support." />
             </View>
 
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={() =>
-                setShowPrivacyModal(false)
+                setShowPrivacyModal(
+                  false
+                )
               }
               style={
                 styles.privacyModalButton
@@ -1251,11 +2088,40 @@ export default function NotificationsScreen() {
   );
 }
 
+function PrivacyPoint({
+  text,
+}: {
+  text: string;
+}) {
+  return (
+    <View
+      style={
+        styles.privacyPointRow
+      }
+    >
+      <Ionicons
+        name="checkmark-circle"
+        size={17}
+        color="#4D9A66"
+      />
+
+      <Text
+        style={
+          styles.privacyPointText
+        }
+      >
+        {text}
+      </Text>
+    </View>
+  );
+}
+
 const styles =
   StyleSheet.create({
     safeArea: {
       flex: 1,
-      backgroundColor: "#FFFFFF",
+      backgroundColor:
+        "#FFFFFF",
     },
 
     background: {
@@ -1303,6 +2169,10 @@ const styles =
     },
 
     markAllButton: {
+      minWidth: 78,
+      minHeight: 32,
+      alignItems: "flex-end",
+      justifyContent: "center",
       paddingVertical: 7,
       paddingLeft: 8,
     },
@@ -1315,6 +2185,31 @@ const styles =
 
     markAllTextDisabled: {
       color: "#B8BCC0",
+    },
+
+    errorBanner: {
+      marginHorizontal: 18,
+      marginBottom: 8,
+      borderRadius: 12,
+      backgroundColor: "#FFF0F1",
+      paddingHorizontal: 11,
+      paddingVertical: 9,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    errorBannerText: {
+      flex: 1,
+      marginHorizontal: 7,
+      fontSize: 9.5,
+      lineHeight: 14,
+      color: "#925A60",
+    },
+
+    retryText: {
+      fontSize: 9,
+      fontWeight: "700",
+      color: "#C95860",
     },
 
     filtersContainer: {
@@ -1377,11 +2272,25 @@ const styles =
       color: "#6A5558",
     },
 
+    loadingState: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      paddingBottom: 80,
+    },
+
+    loadingText: {
+      marginTop: 11,
+      fontSize: 10,
+      color: "#858B92",
+    },
+
     scrollView: {
       flex: 1,
     },
 
     scrollContent: {
+      flexGrow: 1,
       paddingHorizontal: 18,
       paddingBottom: 30,
     },
@@ -1499,9 +2408,12 @@ const styles =
     },
 
     emptyState: {
+      flex: 1,
+      minHeight: 340,
       alignItems: "center",
+      justifyContent: "center",
       paddingHorizontal: 35,
-      paddingTop: 80,
+      paddingBottom: 60,
     },
 
     emptyIcon: {
