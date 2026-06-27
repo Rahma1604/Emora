@@ -8,8 +8,43 @@ from typing import Optional
 
 
 CONTEXT_KEYWORDS: dict[str, list[str]] = {
-    "isolation":     ["لوحدي", "عايز أبقى لوحدي", "مش عايز أتكلم", "مش عايز أكلم حد",
-                      "بعيد عن كل حاجة", "عزلة", "محدش بيكلمني", "بوحدي"],
+"self_harm": [
+    "اموت نفسي",
+    "أموت نفسي",
+    "انتحر",
+    "اقتل نفسي",
+    "أقتل نفسي",
+    "نفسي اموت",
+    "نفسي أموت",
+    "نفسي اختفي",
+    "نفسي أختفي",
+    "مش عايز اعيش",
+    "مش عايزة اعيش",
+    "مش عايز أعيش",
+    "مش عايزة أعيش",
+],
+
+"hopelessness": [
+    "زهقت",
+    "بكره كل حاجة",
+    "مفيش فايدة",
+    "نفسي اهرب",
+    "تعبت",
+    "مش قادر اكمل",
+    "مش قادرة اكمل",
+    "مش عايز اكمل",
+    "مش عايزة اكمل",
+    "حياتي وحشة",
+],
+
+"isolation": [
+    "محدش بيحبني",
+    "محدش فاهمني",
+    "محدش مهتم بيا",
+    "لوحدي",
+    "عايز ابقى لوحدي",
+    "عايزة ابقى لوحدي",
+],
     "school":        ["مدرسة", "فصل", "مستر", "درس", "واجب", "ناظر",
                       "امتحان", "المدرسة", "الفصل", "الكشكول", "شنطة"],
     "family":        ["ماما", "بابا", "أهل", "بيت", "أخو", "أخت",
@@ -238,6 +273,19 @@ MOTHER_REPORT_TEMPLATE = {
         ],
         "urgent": False,
     },
+    "Suicidal Ideation": {
+        "title": "⚠️ حالة تحتاج تدخل فوري",
+        "message": (
+            "تم رصد عبارات قد تشير إلى أفكار إيذاء للنفس. "
+            "ينصح بالتواصل مع مختص نفسي بشكل عاجل."
+        ),
+        "tips": [
+            "عدم ترك الطفل بمفرده لفترات طويلة",
+            "التواصل مع مختص نفسي فوراً",
+            "الاستماع للطفل بدون لوم أو تهديد"
+        ],
+        "urgent": True,
+    },
 }
 
 DOCTOR_REPORT_TEMPLATE = {
@@ -341,6 +389,18 @@ DOCTOR_REPORT_TEMPLATE = {
         "recommended_assessment": [],
         "intervention": "استمرار المتابعة",
     },
+    "Suicidal Ideation": {
+        "icd10": "R45.851",
+        "clinical_notes": (
+            "تم رصد عبارات تدل على وجود أفكار إيذاء للنفس "
+            "أو رغبة في الموت."
+        ),
+        "recommended_assessment": [
+            "Suicide Risk Assessment",
+            "Clinical Interview"
+        ],
+        "intervention": "إحالة عاجلة لمختص نفسي وتقييم مستوى الخطورة.",
+    },
 }
 
 
@@ -402,10 +462,26 @@ def run_diagnostic_engine(scores: dict, context: dict) -> dict:
     def s(e): return scores.get(e, 0)
     def ctx(*keys): return any(context.get(k, 0) > 0 for k in keys)
 
-    if s("sad") >= 3:
-        return {"diagnosis": "اضطراب الاكتئاب (Depression)",
-                "risk": "High" if ctx("isolation") else "Medium",
-                "details": "حزن مستمر لأكثر من 3 أيام" + (" مع عزلة اجتماعية." if ctx("isolation") else ".")}
+    if ctx("self_harm"):
+        return {
+            "diagnosis": "Suicidal Ideation",
+            "risk": "Critical",
+            "details": "تم رصد عبارات تشير إلى إيذاء النفس أو أفكار انتحارية."
+        }
+
+    if (
+            s("sad") >= 2 and
+            (
+                    ctx("isolation")
+                    or ctx("hopelessness")
+                    or ctx("self_harm")
+            )
+    ):
+        return {
+            "diagnosis": "اضطراب الاكتئاب (Depression)",
+            "risk": "High" if ctx("self_harm") else "Medium",
+            "details": "مؤشرات اكتئابية متكررة مصحوبة بأفكار سلبية أو عزلة."
+        }
 
     if s("fear") >= 2 and ctx("family", "school"):
         return {"diagnosis": "اضطراب قلق الانفصال (Separation Anxiety)",
