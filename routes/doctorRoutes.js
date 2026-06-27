@@ -1286,5 +1286,36 @@ router.put(
     }
   }
 );
+router.get("/dashboard-stats", checkToken, async (req, res) => {
+  try {
+    const doctorId = req.user._id;
 
+    // 1. حساب عدد الحالات التي تمت مراجعتها (Cases Reviewed)
+    // نفترض أن الحالات التي تم مراجعتها لها status معين أو حقل reviewed
+    const casesReviewed = await Case.countDocuments({ 
+        doctorId: doctorId, 
+        status: "reviewed" 
+    });
+
+    // 2. حساب عدد الأطفال المتابعين (Children Followed)
+    // نقوم بجلب الحالات المميزة للطبيب لنعرف كم طفل يتابعه
+    const uniqueChildren = await Case.distinct("childId", { 
+        doctorId: doctorId 
+    });
+    const childrenFollowed = uniqueChildren.length;
+
+    // 3. إرجاع النتيجة للفرونت أند
+    res.status(200).json({
+      success: true,
+      stats: {
+        casesReviewed,
+        childrenFollowed,
+        isVerified: req.user.isVerified // حالة التحقق من الطبيب
+      }
+    });
+  } catch (error) {
+    console.error("Dashboard Stats Error:", error);
+    res.status(500).json({ message: "خطأ في جلب بيانات الإحصائيات" });
+  }
+});
 module.exports = router;
