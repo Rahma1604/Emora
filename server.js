@@ -1,44 +1,48 @@
-<<<<<<< Updated upstream
-require('dotenv').config();
-console.log("EMAIL_PASS:", process.env.EMAIL_PASS);
-const http = require('http');
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-
-const app = express();
-
-const server = http.createServer(app);
-const io = require('socket.io')(server);
-global.io = io;
-
-
-const authRoutes = require('./routes/authRoutes');
-const childRoutes = require('./routes/childRoutes');
-const chatRoutes = require('./routes/chatRoutes');
-const doctorChatRoutes = require('./routes/doctorChatRoutes');
-const doctorRoutes = require('./routes/doctorRoutes');
-const aiRoutes = require('./routes/aiRoutes');
-const adminRoutes = require('./routes/adminRoutes');
-
-=======
-
 require("dotenv").config();
 
+const http = require("http");
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const { Server } = require("socket.io");
 
-// Routes
+const app = express();
+const server = http.createServer(app);
+
+/* =========================
+   Socket.IO
+========================= */
+
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  },
+});
+
+// Makes Socket.IO available inside route files
+global.io = io;
+
+io.on("connection", (socket) => {
+  console.log("Socket connected:", socket.id);
+
+  socket.on("disconnect", () => {
+    console.log("Socket disconnected:", socket.id);
+  });
+});
+
+/* =========================
+   Routes
+========================= */
+
 const authRoutes = require("./routes/authRoutes");
 const childRoutes = require("./routes/childRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 const doctorChatRoutes = require("./routes/doctorChatRoutes");
 const doctorRoutes = require("./routes/doctorRoutes");
 const aiRoutes = require("./routes/aiRoutes");
-
-const app = express();
->>>>>>> Stashed changes
+const adminRoutes = require("./routes/adminRoutes");
 
 /* =========================
    Middlewares
@@ -66,20 +70,10 @@ app.use((req, res, next) => {
   next();
 });
 
-<<<<<<< Updated upstream
-app.use('/api/auth', authRoutes);
-app.use('/api/children', childRoutes);
-app.use('/api/chat', chatRoutes);
-app.use('/api/doctor-chat', doctorChatRoutes);
-app.use('/api/doctor', doctorRoutes);
-app.use('/api/admin', adminRoutes);
-=======
 /* =========================
    Server Test Routes
 ========================= */
->>>>>>> Stashed changes
 
-// Test the main server
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -87,7 +81,6 @@ app.get("/", (req, res) => {
   });
 });
 
-// Test the API from mobile or browser
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     success: true,
@@ -106,6 +99,7 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/doctor-chat", doctorChatRoutes);
 app.use("/api/doctor", doctorRoutes);
 app.use("/api/ai", aiRoutes);
+app.use("/api/admin", adminRoutes);
 
 /* =========================
    Route Not Found
@@ -152,21 +146,10 @@ const startServer = async () => {
 
     console.log("MongoDB Connected Successfully");
 
-    app.listen(PORT, "0.0.0.0", () => {
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server is running on port ${PORT}`);
       console.log(
-        "Server is running on port " + PORT
-      );
-
-      console.log(
-        "Local API: http://localhost:" +
-          PORT +
-          "/api/health"
-      );
-
-      console.log(
-        "Mobile API: http://192.168.1.7:" +
-          PORT +
-          "/api/health"
+        `Local API: http://localhost:${PORT}/api/health`
       );
     });
   } catch (error) {
@@ -180,4 +163,3 @@ const startServer = async () => {
 };
 
 startServer();
-

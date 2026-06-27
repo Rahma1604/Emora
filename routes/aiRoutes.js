@@ -1,135 +1,10 @@
+
 const express = require("express");
-const router = express.Router();
-<<<<<<< Updated upstream
-const multer = require('multer');
-const axios = require('axios');
-const FormData = require('form-data');
-const fs = require('fs');
-const mongoose = require('mongoose');
-const Case = require('../models/Case');
-const { checkToken } = require('../middleware/authMiddleware');
-const { sendNotification } = require('../services/notificationService');
-
-const upload = multer({ dest: 'uploads/' }).fields([
-    { name: 'file', maxCount: 1 }, 
-    { name: 'audio', maxCount: 1 }
-]);
-router.post('/analyze', checkToken, upload, async (req, res) => {
-    try {
-        const { child_id, text, doctorId } = req.body;
-        const files = req.files;
-
-if (!child_id) {
-            return res.status(400).json({ error: "child_id is required" });
-        }
-
-        const formData = new FormData();
-        formData.append('child_id', child_id);
-        formData.append('text', text || "");
-       
-        if (files.file) formData.append('file', fs.createReadStream(files.file[0].path));
-        if (files.audio) formData.append('audio', fs.createReadStream(files.audio[0].path));
-
-        const aiResponse = await axios.post('http://127.0.0.1:8000/predict', formData, {
-            headers: formData.getHeaders(),
-            timeout: 30000
-        });
-
-        const analyses = aiResponse.data.analyses;
-        const textAnalysis = analyses.find(a => a.modality === 'text') || {};
-        const imageAnalysis = analyses.find(a => a.modality === 'image') || {};
-        const voiceAnalysis = analyses.find(a => a.modality === 'voice') || {};
-      
-        const avgConfidence = (
-            (textAnalysis.confidence || 0) + 
-            (imageAnalysis.confidence || 0) + 
-            (voiceAnalysis.confidence || 0)
-        ) / (analyses.length || 1);
-      
-    
-        let priority = 'Low';
-        if (avgConfidence >= 75) priority = 'High';
-        else if (avgConfidence>= 40) priority = 'Medium';
-
-        let existingCase = await Case.findOne({ childId: new mongoose.Types.ObjectId(child_id), doctorId });
-        
-        let progress = 'no enough data yet';
-        if (existingCase && existingCase.entriesCount >= 1) {
-            const diff = avgConfidence - (existingCase.emotionPercentage || 0);
-            if (diff < -5) progress = 'improving';
-            else if (diff > 5) progress = 'needs attention';
-            else progress = 'stable';
-        }
-
-        const updatedCase = await Case.findOneAndUpdate(
-            { 
-                childId: new mongoose.Types.ObjectId(child_id),doctorId},
-            { 
-                $set: { 
-                    aiDiagnosis: aiResponse.data.diagnostic_result?.diagnosis || "تحت المتابعة",
-                    aiSummary: aiResponse.data.text_analysis?.content || "no summary",
-                    dominantEmotion: aiResponse.data.text_analysis?.emotion || "غير محدد",
-                    emotionPercentage: avgConfidence,
-                    priority: priority,
-                    childProgress: progress,
-                    lastAnalysisDate: new Date()
-                },
-                $inc: { entriesCount: 1 },
-                $push: { 
-                  drawings: files?.file ? { imageUrl: files.file[0].path, analysisResult: imageAnalysis.emotion } : undefined,
-                    textAnalyses: { content: text, analysisResult: textAnalysis.summary }, emotionalTrend: {
-                        week: `W${Math.ceil(Date.now() / (7 * 24 * 60 * 60 * 1000))}`,
-                        emotion: textAnalysis.emotion || "None",
-                        value:avgConfidence
-                    },
-                    audioAnalyses: files?.audio ? { audioUrl: files.audio[0].path } : undefined,
-                   analysisTimeline: {
-    diagnosis: aiResponse.data.diagnostic_result?.diagnosis || "تحت المتابعة",
-    emotion: textAnalysis.emotion || imageAnalysis.emotion || voiceAnalysis.emotion || "غير محدد",
-    confidence: avgConfidence,
-    date: new Date()
-}
-            },
-            $addToSet: { 
-            recurringPatterns: { $each: aiResponse.data.text_analysis?.patterns || [] }
-            }
-            },
-            { upsert: true, new: true }
-        ).populate('childId', 'name');
-        if (priority === 'High') {
-    await sendNotification({
-        doctorId: doctorId,
-        childId: child_id,
-        title: "Urgent Review Required",
-        // الآن أصبح updatedCase.childId.name متاحاً
-        message: `Analysis for ${updatedCase.childId.name} indicates high priority.`,
-        type: 'urgent'
-    });
-}
-if (files?.file) fs.unlinkSync(files.file[0].path);
-        if (files?.audio) fs.unlinkSync(files.audio[0].path);
-
-        res.status(200).json({
-            status: "success",
-            case: updatedCase,
-            message: "Analysis processed and case updated successfully"
-        });
-
-    } catch (error) {
-        console.error("AI Integration Error:", error);
-        
-       if (req.files) {
-            if (req.files.file) fs.unlinkSync(req.files.file[0].path);
-            if (req.files.audio) fs.unlinkSync(req.files.audio[0].path);
-        }
-        
-        res.status(500).json({ error: "Failed to connect to AI Engine or update database" });
-=======
-
 const multer = require("multer");
 const axios = require("axios");
 const FormData = require("form-data");
 const fs = require("fs");
+const path = require("path");
 const mongoose = require("mongoose");
 
 const Case = require("../models/Case");
@@ -137,32 +12,49 @@ const Child = require("../models/Child");
 const User = require("../models/User");
 
 const {
+  cloudinary,
+} = require("../config/cloudinary");
+
+const {
   checkToken,
 } = require("../middleware/authMiddleware");
 
-/*
-  عنوان خدمة Python.
+const router = express.Router();
 
-  محليًا:
-  http://127.0.0.1:8000
+/* =====================================================
+   AI SERVICE CONFIGURATION
+===================================================== */
 
-  ويمكن تغييره لاحقًا من .env:
-  AI_BASE_URL=http://127.0.0.1:8000
-*/
 const AI_BASE_URL = (
   process.env.AI_BASE_URL ||
   "http://127.0.0.1:8000"
-).replace(/\/$/, "");
+).replace(/\/+$/, "");
 
-/*
-  حفظ الصورة مؤقتًا داخل uploads.
-*/
+/* =====================================================
+   TEMPORARY UPLOAD DIRECTORY
+===================================================== */
+
+const uploadsDirectory = path.join(
+  process.cwd(),
+  "uploads"
+);
+
+if (!fs.existsSync(uploadsDirectory)) {
+  fs.mkdirSync(uploadsDirectory, {
+    recursive: true,
+  });
+}
+
+/* =====================================================
+   MULTER CONFIGURATION
+===================================================== */
+
 const upload = multer({
-  dest: "uploads/",
+  dest: uploadsDirectory,
 
   limits: {
-    fileSize:
-      10 * 1024 * 1024,
+    fileSize: 15 * 1024 * 1024,
+    files: 2,
   },
 
   fileFilter: (
@@ -170,90 +62,141 @@ const upload = multer({
     file,
     callback
   ) => {
-    if (
-      !file.mimetype ||
-      !file.mimetype.startsWith(
+    const isImage =
+      file.fieldname === "file" &&
+      file.mimetype &&
+      file.mimetype.startsWith(
         "image/"
-      )
+      );
+
+    const isAudio =
+      file.fieldname === "audio" &&
+      file.mimetype &&
+      (
+        file.mimetype.startsWith(
+          "audio/"
+        ) ||
+        file.mimetype ===
+          "video/mp4" ||
+        file.mimetype ===
+          "application/octet-stream"
+      );
+
+    if (
+      !isImage &&
+      !isAudio
     ) {
       return callback(
         new Error(
-          "Only image files are supported by the current AI model"
+          file.fieldname ===
+            "audio"
+            ? "The audio field must contain a valid audio file"
+            : "The file field must contain a valid image"
         )
       );
->>>>>>> Stashed changes
     }
 
-    callback(null, true);
+    return callback(
+      null,
+      true
+    );
   },
-});
-router.post('/analyze-result', async (req, res) => {
-    try {
-        const { assignedDoctorId, childId, priority, isWeeklySummary, reviewedCount, doctorId } = req.body;
-        
-        // 1. جلب اسم الطفل من قاعدة البيانات لجعل الرسالة ديناميكية
-        const child = await mongoose.model('Child').findById(childId).select('name');
-        const childName = child ? child.name : "the child";
+}).fields([
+  {
+    name: "file",
+    maxCount: 1,
+  },
 
-<<<<<<< Updated upstream
-        // 2. منطق الحالة العاجلة
-        if (priority === 'High') {
-            await sendNotification({
-                doctorId: assignedDoctorId,
-                childId: childId,
-                title: "Urgent Review Required",
-                message: `${childName}'s latest analysis shows indicators that may require your attention.`,
-                type: 'urgent'
-            });
-        }
+  {
+    name: "audio",
+    maxCount: 1,
+  },
+]);
 
-        // 3. منطق الملخص الأسبوعي
-        if (isWeeklySummary) {
-            await sendNotification({
-                doctorId: doctorId,
-                title: "Weekly Performance Summary",
-                message: `Your weekly insights are ready. You reviewed ${reviewedCount} cases.`,
-                type: 'summary'
-            });
-        }
+/* =====================================================
+   UPLOAD ERROR HANDLER
+===================================================== */
 
-        res.json({ success: true });
-    } catch (err) {
-        console.error("Error processing analyze-result:", err);
-        res.status(500).json({ error: "Failed to process notification" });
-    }
-});
-=======
-/*
-  Wrapper لإرجاع خطأ Multer بشكل واضح.
-*/
-const uploadImage = (
+const handleUpload = (
   req,
   res,
   next
 ) => {
-  upload.single("file")(
+  upload(
     req,
     res,
     (error) => {
-      if (error) {
+      if (!error) {
+        return next();
+      }
+
+      console.error(
+        "AI UPLOAD ERROR:",
+        error
+      );
+
+      if (
+        error.code ===
+        "LIMIT_FILE_SIZE"
+      ) {
         return res
           .status(400)
           .json({
+            success: false,
+
             error:
-              error.message ||
-              "Failed to upload image",
+              "Each uploaded file must be 15 MB or less",
           });
       }
 
-      next();
+      if (
+        error.code ===
+        "LIMIT_FILE_COUNT"
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            error:
+              "Only one image and one audio file are allowed",
+          });
+      }
+
+      if (
+        error.code ===
+        "LIMIT_UNEXPECTED_FILE"
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+
+            error:
+              "Only the fields file and audio are supported",
+          });
+      }
+
+      return res
+        .status(400)
+        .json({
+          success: false,
+
+          error:
+            error.message ||
+            "Could not upload the entry files",
+        });
     }
   );
 };
 
-function removeUploadedFile(
+/* =====================================================
+   FILE HELPERS
+===================================================== */
+
+const removeTemporaryFile = (
   filePath
-) {
+) => {
   if (
     !filePath ||
     !fs.existsSync(filePath)
@@ -264,39 +207,52 @@ function removeUploadedFile(
   try {
     fs.unlinkSync(filePath);
   } catch (error) {
-    console.log(
+    console.error(
       "TEMP FILE DELETE ERROR:",
       error.message
     );
   }
-}
+};
 
-function normalizePercentage(
+const removeRequestFiles = (
+  files
+) => {
+  removeTemporaryFile(
+    files?.file?.[0]?.path
+  );
+
+  removeTemporaryFile(
+    files?.audio?.[0]?.path
+  );
+};
+
+/* =====================================================
+   DATA HELPERS
+===================================================== */
+
+const normalizeConfidence = (
   value
-) {
-  const numericValue =
+) => {
+  const numberValue =
     Number(value);
 
   if (
-    Number.isNaN(
-      numericValue
+    !Number.isFinite(
+      numberValue
     ) ||
-    numericValue < 0
+    numberValue < 0
   ) {
     return 0;
   }
 
   /*
-    بعض الموديلات ترجع:
-    0.85
-
-    وبعضها يرجع:
-    85
+    بعض الموديلات ترجع 0.85
+    وبعضها ترجع 85
   */
   const percentage =
-    numericValue <= 1
-      ? numericValue * 100
-      : numericValue;
+    numberValue <= 1
+      ? numberValue * 100
+      : numberValue;
 
   return Math.min(
     100,
@@ -304,12 +260,35 @@ function normalizePercentage(
       percentage.toFixed(2)
     )
   );
-}
+};
 
-function convertToText(
+const normalizeEmotion = (
+  value
+) => {
+  const emotion =
+    String(value || "")
+      .trim()
+      .toLowerCase();
+
+  const aliases = {
+    anger: "angry",
+    happiness: "happy",
+    sadness: "sad",
+    fearful: "fear",
+    surprised: "surprise",
+  };
+
+  return (
+    aliases[emotion] ||
+    emotion ||
+    "unknown"
+  );
+};
+
+const toText = (
   value,
   fallback = ""
-) {
+) => {
   if (
     value === null ||
     value === undefined
@@ -318,7 +297,8 @@ function convertToText(
   }
 
   if (
-    typeof value === "string"
+    typeof value ===
+    "string"
   ) {
     return value;
   }
@@ -327,187 +307,339 @@ function convertToText(
     return JSON.stringify(
       value
     );
-  } catch {
+  } catch (error) {
     return fallback;
   }
-}
+};
+
+/* =====================================================
+   GET ANALYSIS FROM DIFFERENT AI RESPONSE FORMATS
+===================================================== */
+
+const getAnalysisByModality = (
+  aiData,
+  modality
+) => {
+  const analyses =
+    Array.isArray(
+      aiData.analyses
+    )
+      ? aiData.analyses
+      : [];
+
+  const arrayAnalysis =
+    analyses.find(
+      (item) =>
+        String(
+          item?.modality ||
+          ""
+        ).toLowerCase() ===
+        modality
+    );
+
+  if (arrayAnalysis) {
+    return arrayAnalysis;
+  }
+
+  if (
+    modality === "text"
+  ) {
+    return (
+      aiData.text_analysis ||
+      aiData.textAnalysis ||
+      {}
+    );
+  }
+
+  if (
+    modality === "image"
+  ) {
+    return (
+      aiData.image_analysis ||
+      aiData.imageAnalysis ||
+      {}
+    );
+  }
+
+  if (
+    modality === "voice"
+  ) {
+    return (
+      aiData.voice_analysis ||
+      aiData.audio_analysis ||
+      aiData.voiceAnalysis ||
+      aiData.audioAnalysis ||
+      {}
+    );
+  }
+
+  return {};
+};
+
+/* =====================================================
+   SELECT RANDOM APPROVED DOCTOR
+===================================================== */
+
+const chooseApprovedDoctor =
+  async () => {
+    const doctorFilter = {
+      role: "doctor",
+
+      verificationStatus:
+        "approved",
+
+      isVerified: true,
+    };
+
+    const doctorsCount =
+      await User.countDocuments(
+        doctorFilter
+      );
+
+    if (
+      doctorsCount === 0
+    ) {
+      return null;
+    }
+
+    const randomIndex =
+      Math.floor(
+        Math.random() *
+        doctorsCount
+      );
+
+    return User.findOne(
+      doctorFilter
+    )
+      .skip(randomIndex)
+      .select(
+        "_id fullName email specialization"
+      );
+  };
+
+/* =====================================================
+   CLOUDINARY UPLOAD HELPER
+===================================================== */
+
+const uploadFileToCloudinary =
+  async (
+    file,
+    folder,
+    resourceType
+  ) => {
+    if (!file?.path) {
+      return "";
+    }
+
+    try {
+      const result =
+        await cloudinary
+          .uploader
+          .upload(
+            file.path,
+            {
+              folder,
+
+              resource_type:
+                resourceType,
+            }
+          );
+
+      return (
+        result.secure_url ||
+        result.url ||
+        ""
+      );
+    } catch (error) {
+      console.error(
+        "CLOUDINARY ENTRY UPLOAD ERROR:",
+        error.message
+      );
+
+      /*
+        فشل Cloudinary لا يوقف
+        نتيجة تحليل الـAI.
+      */
+      return "";
+    }
+  };
+
+/* =====================================================
+   ANALYZE CHILD ENTRY
+
+   POST /api/ai/analyze
+
+   FormData fields:
+
+   child_id : required
+   text     : optional
+   file     : optional image
+   audio    : optional audio
+
+   يجب إرسال نص أو صورة أو صوت على الأقل.
+===================================================== */
 
 router.post(
   "/analyze",
   checkToken,
-  uploadImage,
+  handleUpload,
   async (req, res) => {
-    const file =
-      req.file;
+    const files =
+      req.files || {};
+
+    const imageFile =
+      files.file?.[0] ||
+      null;
+
+    const audioFile =
+      files.audio?.[0] ||
+      null;
 
     try {
+      /* =========================
+         CHECK PARENT ROLE
+      ========================= */
+
+      if (
+        req.user.role !==
+        "parent"
+      ) {
+        return res
+          .status(403)
+          .json({
+            success: false,
+
+            error:
+              "Only parent accounts can submit child entries",
+          });
+      }
+
+      /* =========================
+         REQUEST DATA
+      ========================= */
+
       const childId =
         String(
           req.body.child_id ||
-            ""
+          req.body.childId ||
+          ""
         ).trim();
 
       const text =
         String(
           req.body.text ||
-            ""
+          ""
         ).trim();
 
-      /*
-        Route خاص بفلو البيرنت.
-      */
-      if (
-        req.user?.role &&
-        req.user.role !==
-          "parent"
-      ) {
-        removeUploadedFile(
-          file?.path
-        );
-
-        return res
-          .status(403)
-          .json({
-            error:
-              "Only parent accounts can submit child AI analyses",
-          });
-      }
-
       if (!childId) {
-        removeUploadedFile(
-          file?.path
-        );
-
         return res
           .status(400)
           .json({
+            success: false,
+
             error:
               "Child ID is required",
           });
       }
 
       if (
-        !mongoose.Types.ObjectId.isValid(
-          childId
-        )
+        !mongoose
+          .Types
+          .ObjectId
+          .isValid(childId)
       ) {
-        removeUploadedFile(
-          file?.path
-        );
-
         return res
           .status(400)
           .json({
+            success: false,
+
             error:
               "Invalid child ID",
           });
       }
 
-      if (!file) {
+      if (
+        !text &&
+        !imageFile &&
+        !audioFile
+      ) {
         return res
           .status(400)
           .json({
+            success: false,
+
             error:
-              "An image is required for the current AI model",
+              "The entry must contain text, an image or an audio file",
           });
       }
 
-      if (!text) {
-        removeUploadedFile(
-          file.path
-        );
+      /* =========================
+         CHECK CHILD OWNERSHIP
+      ========================= */
 
-        return res
-          .status(400)
-          .json({
-            error:
-              "A written observation is required",
-          });
-      }
-
-      /*
-        التأكد إن الطفل تابع
-        للبيرنت صاحب الـToken.
-      */
       const child =
         await Child.findOne({
-          _id: childId,
+          _id:
+            childId,
+
           parentId:
             req.user._id,
         });
 
       if (!child) {
-        removeUploadedFile(
-          file.path
-        );
-
         return res
           .status(404)
           .json({
+            success: false,
+
             error:
               "Child not found or does not belong to this parent",
           });
       }
 
-      /*
-        البحث عن أحدث Case للطفل.
-      */
+      /* =========================
+         FIND CURRENT CASE
+      ========================= */
+
       let currentCase =
         await Case.findOne({
           childId:
             child._id,
+
+          status: {
+            $ne:
+              "closed",
+          },
         }).sort({
-          lastAnalysisDate: -1,
-          createdAt: -1,
+          lastAnalysisDate:
+            -1,
+
+          createdAt:
+            -1,
         });
 
       let assignedDoctorId =
         currentCase?.doctorId ||
         null;
 
-      /*
-        لو الطفل لسه معندوش Case،
-        نربطه بأول دكتور معتمد.
+      /* =========================
+         ASSIGN APPROVED DOCTOR
+      ========================= */
 
-        ده يمنع فشل الحفظ بسبب
-        doctorId المطلوب في Case.
-      */
-      if (!assignedDoctorId) {
+      if (
+        !assignedDoctorId
+      ) {
         const approvedDoctor =
-          await User.findOne({
-            role: "doctor",
+          await chooseApprovedDoctor();
 
-            $or: [
-              {
-                verificationStatus:
-                  "approved",
-              },
-              {
-                verificationStatus:
-                  "verified",
-              },
-              {
-                isVerified: true,
-              },
-            ],
-          })
-            .sort({
-              createdAt: 1,
-            })
-            .select("_id");
-
-        if (
-          !approvedDoctor
-        ) {
-          removeUploadedFile(
-            file.path
-          );
-
+        if (!approvedDoctor) {
           return res
             .status(409)
             .json({
+              success: false,
+
               error:
-                "No approved doctor is currently available to receive this case",
+                "No approved doctor is currently available to receive this entry",
             });
         }
 
@@ -515,14 +647,10 @@ router.post(
           approvedDoctor._id;
       }
 
-      /*
-        تجهيز الطلب لخدمة FastAPI.
+      /* =========================
+         SEND DATA TO PYTHON AI
+      ========================= */
 
-        Python ينتظر:
-        child_id
-        text
-        file
-      */
       const formData =
         new FormData();
 
@@ -536,26 +664,56 @@ router.post(
         text
       );
 
-      formData.append(
-        "file",
-        fs.createReadStream(
-          file.path
-        ),
-        {
-          filename:
-            file.originalname ||
-            "child-image.jpg",
+      if (imageFile) {
+        formData.append(
+          "file",
 
-          contentType:
-            file.mimetype ||
-            "image/jpeg",
-        }
-      );
+          fs.createReadStream(
+            imageFile.path
+          ),
+
+          {
+            filename:
+              imageFile
+                .originalname ||
+              "child-image.jpg",
+
+            contentType:
+              imageFile
+                .mimetype ||
+              "image/jpeg",
+          }
+        );
+      }
+
+      if (audioFile) {
+        formData.append(
+          "audio",
+
+          fs.createReadStream(
+            audioFile.path
+          ),
+
+          {
+            filename:
+              audioFile
+                .originalname ||
+              "child-audio.m4a",
+
+            contentType:
+              audioFile
+                .mimetype ||
+              "audio/m4a",
+          }
+        );
+      }
 
       const aiResponse =
         await axios.post(
           `${AI_BASE_URL}/predict`,
+
           formData,
+
           {
             headers:
               formData.getHeaders(),
@@ -572,96 +730,411 @@ router.post(
         );
 
       const aiData =
-        aiResponse.data || {};
-
-      const imageAnalysis =
-        aiData.image_analysis ||
+        aiResponse.data ||
         {};
+
+      /* =========================
+         READ AI ANALYSES
+      ========================= */
 
       const textAnalysis =
-        aiData.text_analysis ||
-        {};
+        getAnalysisByModality(
+          aiData,
+          "text"
+        );
+
+      const imageAnalysis =
+        getAnalysisByModality(
+          aiData,
+          "image"
+        );
+
+      const voiceAnalysis =
+        getAnalysisByModality(
+          aiData,
+          "voice"
+        );
+
+      const availableAnalyses =
+        [
+          textAnalysis,
+          imageAnalysis,
+          voiceAnalysis,
+        ].filter(
+          (analysis) =>
+            analysis &&
+            Object.keys(
+              analysis
+            ).length > 0
+        );
+
+      /* =========================
+         CALCULATE CONFIDENCE
+      ========================= */
+
+      const confidenceValues =
+        availableAnalyses
+          .map(
+            (analysis) =>
+              normalizeConfidence(
+                analysis.confidence ??
+                analysis.percentage ??
+                analysis.score
+              )
+          )
+          .filter(
+            (confidence) =>
+              Number.isFinite(
+                confidence
+              )
+          );
+
+      const averageConfidence =
+        confidenceValues.length >
+        0
+          ? Number(
+              (
+                confidenceValues
+                  .reduce(
+                    (
+                      total,
+                      confidence
+                    ) =>
+                      total +
+                      confidence,
+                    0
+                  ) /
+                confidenceValues
+                  .length
+              ).toFixed(2)
+            )
+          : 0;
+
+      /* =========================
+         FIND DOMINANT EMOTION
+      ========================= */
+
+      const emotionCandidates =
+        availableAnalyses
+          .map(
+            (analysis) => ({
+              emotion:
+                normalizeEmotion(
+                  analysis.emotion ||
+                  analysis.label
+                ),
+
+              confidence:
+                normalizeConfidence(
+                  analysis.confidence ??
+                  analysis.percentage ??
+                  analysis.score
+                ),
+            })
+          )
+          .filter(
+            (item) =>
+              item.emotion !==
+              "unknown"
+          )
+          .sort(
+            (first, second) =>
+              second.confidence -
+              first.confidence
+          );
+
+      const dominantEmotion =
+        normalizeEmotion(
+          aiData.dominant_emotion ||
+          aiData.dominantEmotion ||
+          emotionCandidates[0]
+            ?.emotion ||
+          textAnalysis.emotion ||
+          imageAnalysis.emotion ||
+          voiceAnalysis.emotion
+        );
+
+      /* =========================
+         DIAGNOSIS AND SUMMARY
+      ========================= */
 
       const diagnosticResult =
         aiData.diagnostic_result ||
+        aiData.diagnosticResult ||
         {};
-
-      const diagnostic =
-        diagnosticResult.diagnostic ||
-        diagnosticResult;
-
-      const motherReport =
-        diagnosticResult.mother_report ||
-        diagnosticResult.motherReport ||
-        {};
-
-      const imageEmotion =
-        imageAnalysis.emotion ||
-        "Unknown";
-
-      const textEmotion =
-        textAnalysis.emotion ||
-        imageEmotion ||
-        "Unknown";
-
-      const percentage =
-        normalizePercentage(
-          textAnalysis.confidence ??
-            textAnalysis.percentage ??
-            0
-        );
 
       const diagnosis =
-        diagnostic.diagnosis ||
-        diagnosticResult.diagnosis ||
-        "تحت المتابعة";
+        toText(
+          diagnosticResult
+            .diagnosis ||
+          diagnosticResult
+            .diagnostic
+            ?.diagnosis ||
+          aiData.diagnosis,
+
+          "Under follow-up"
+        );
 
       const summary =
-        textAnalysis.summary ||
-        diagnostic.details ||
-        motherReport.message ||
-        "";
+        toText(
+          aiData.summary ||
+          textAnalysis.summary ||
+          textAnalysis.content ||
+          diagnosticResult
+            .summary ||
+          diagnosticResult
+            .diagnostic
+            ?.details ||
+          diagnosticResult
+            .mother_report
+            ?.message,
+
+          ""
+        );
+
+      /* =========================
+         PRIORITY
+      ========================= */
+
+      const rawPriority =
+        String(
+          diagnosticResult
+            .priority ||
+          aiData.priority ||
+          "Low"
+        ).trim();
+
+      const priorityMap = {
+        low:
+          "Low",
+
+        medium:
+          "Medium",
+
+        high:
+          "High",
+      };
+
+      const priority =
+        priorityMap[
+          rawPriority
+            .toLowerCase()
+        ] ||
+        "Low";
+
+      /* =========================
+         RECURRING PATTERNS
+      ========================= */
+
+      const patternsSource =
+        textAnalysis.patterns ||
+        diagnosticResult.patterns ||
+        aiData.patterns ||
+        [];
 
       const patterns =
         Array.isArray(
-          textAnalysis.patterns
+          patternsSource
         )
-          ? textAnalysis.patterns
-          : Array.isArray(
-                diagnosticResult.patterns
+          ? patternsSource
+              .map(
+                (pattern) =>
+                  toText(
+                    pattern
+                  )
               )
-            ? diagnosticResult.patterns
-            : [];
+              .filter(Boolean)
+          : [];
 
-      let priority =
-        "Low";
+      /* =========================
+         UPLOAD MEDIA TO CLOUDINARY
+      ========================= */
 
-      if (
-        percentage >= 75
-      ) {
-        priority = "High";
-      } else if (
-        percentage >= 40
-      ) {
-        priority =
-          "Medium";
-      }
+      const imageUrl =
+        await uploadFileToCloudinary(
+          imageFile,
+
+          "Emora_Children_Drawings",
+
+          "image"
+        );
+
+      const audioUrl =
+        await uploadFileToCloudinary(
+          audioFile,
+
+          "Emora_Children_Voices",
+
+          "video"
+        );
 
       const now =
         new Date();
 
-      const imageAnalysisText =
-        `Image emotion: ${imageEmotion}`;
+      /* =========================
+         CREATE MONGODB UPDATE
+      ========================= */
 
-      const textAnalysisText =
-        summary ||
-        `Text emotion: ${textEmotion} (${percentage}%)`;
+      const update = {
+        $set: {
+          doctorId:
+            assignedDoctorId,
 
-      const normalizedImagePath =
-        file.path.replace(
-          /\\/g,
-          "/"
-        );
+          childId:
+            child._id,
+
+          status:
+            "pending",
+
+          priority,
+
+          aiDiagnosis:
+            diagnosis,
+
+          aiSummary:
+            summary,
+
+          dominantEmotion,
+
+          emotionPercentage:
+            averageConfidence,
+
+          lastAnalysisDate:
+            now,
+        },
+
+        $setOnInsert: {
+          createdAt:
+            now,
+        },
+
+        $inc: {
+          entriesCount:
+            1,
+        },
+
+        $push: {
+          emotionalTrend: {
+            week:
+              `W${Math.ceil(
+                Date.now() /
+                (
+                  7 *
+                  24 *
+                  60 *
+                  60 *
+                  1000
+                )
+              )}`,
+
+            emotion:
+              dominantEmotion,
+
+            value:
+              averageConfidence,
+          },
+
+          analysisTimeline: {
+            diagnosis,
+
+            emotion:
+              dominantEmotion,
+
+            confidence:
+              averageConfidence,
+
+            date:
+              now,
+          },
+        },
+      };
+
+      /* =========================
+         SAVE TEXT ANALYSIS
+      ========================= */
+
+      if (text) {
+        update.$push
+          .textAnalyses = {
+            content:
+              text,
+
+            analysisResult:
+              toText(
+                textAnalysis
+                  .summary ||
+                textAnalysis
+                  .content ||
+                textAnalysis
+                  .emotion,
+
+                summary
+              ),
+
+            createdAt:
+              now,
+          };
+      }
+
+      /* =========================
+         SAVE IMAGE ANALYSIS
+      ========================= */
+
+      if (imageFile) {
+        update.$push
+          .drawings = {
+            imageUrl,
+
+            analysisResult:
+              toText(
+                imageAnalysis
+                  .summary ||
+                imageAnalysis
+                  .content ||
+                imageAnalysis
+                  .emotion,
+
+                dominantEmotion
+              ),
+
+            createdAt:
+              now,
+          };
+      }
+
+      /* =========================
+         SAVE AUDIO ANALYSIS
+      ========================= */
+
+      if (audioFile) {
+        update.$push
+          .audioAnalyses = {
+            audioUrl,
+
+            createdAt:
+              now,
+          };
+      }
+
+      /* =========================
+         SAVE PATTERNS
+      ========================= */
+
+      if (
+        patterns.length >
+        0
+      ) {
+        update.$addToSet = {
+          recurringPatterns: {
+            $each:
+              patterns,
+          },
+        };
+      }
+
+      /* =========================
+         CREATE OR UPDATE CASE
+      ========================= */
 
       const caseFilter =
         currentCase
@@ -675,182 +1148,106 @@ router.post(
 
               doctorId:
                 assignedDoctorId,
+
+              status: {
+                $ne:
+                  "closed",
+              },
             };
 
-      const pushData = {
-        drawings: {
-          imageUrl:
-            normalizedImagePath,
-
-          analysisResult:
-            imageAnalysisText,
-
-          emotion:
-            imageEmotion,
-
-          confidence:
-            percentage,
-
-          createdAt:
-            now,
-        },
-
-        textAnalyses: {
-          content:
-            text,
-
-          analysisResult:
-            textAnalysisText,
-
-          emotion:
-            textEmotion,
-
-          confidence:
-            percentage,
-
-          createdAt:
-            now,
-        },
-
-        emotionalTrend: {
-          week:
-            `W${Math.ceil(
-              Date.now() /
-                (
-                  7 *
-                  24 *
-                  60 *
-                  60 *
-                  1000
-                )
-            )}`,
-
-          emotion:
-            textEmotion,
-
-          value:
-            percentage,
-        },
-
-        analysisTimeline: {
-          type:
-            textEmotion ||
-            "Analysis",
-
-          date:
-            now,
-
-          status:
-            "pending",
-        },
-      };
-
-      if (
-        patterns.length > 0
-      ) {
-        pushData.recurringPatterns =
-          {
-            $each:
-              patterns.map(
-                (
-                  pattern
-                ) =>
-                  convertToText(
-                    pattern
-                  )
-              ),
-          };
-      }
-
       const updatedCase =
-        await Case.findOneAndUpdate(
-          caseFilter,
-          {
-            $set: {
-              doctorId:
-                assignedDoctorId,
+        await Case
+          .findOneAndUpdate(
+            caseFilter,
 
-              aiDiagnosis:
-                convertToText(
-                  diagnosis,
-                  "تحت المتابعة"
-                ),
+            update,
 
-              aiSummary:
-                convertToText(
-                  summary
-                ),
+            {
+              upsert:
+                true,
 
-              dominantEmotion:
-                textEmotion,
+              new:
+                true,
 
-              emotionPercentage:
-                percentage,
+              runValidators:
+                true,
 
-              priority,
+              setDefaultsOnInsert:
+                true,
+            }
+          )
+          .populate(
+            "childId",
+            "name age gender"
+          )
+          .populate(
+            "doctorId",
+            "fullName email specialization"
+          );
 
-              lastAnalysisDate:
-                now,
-            },
-
-            $setOnInsert: {
-              childId:
-                child._id,
-
-              status:
-                "pending",
-            },
-
-            $inc: {
-              entriesCount: 1,
-            },
-
-            $push:
-              pushData,
-          },
-          {
-            upsert: true,
-            new: true,
-            runValidators: true,
-            setDefaultsOnInsert:
-              true,
-          }
-        );
+      /* =========================
+         RESPONSE TO FRONTEND
+      ========================= */
 
       return res
         .status(200)
         .json({
+          success:
+            true,
+
           status:
             "success",
 
-          /*
-            النتيجة الأصلية القادمة
-            من موديل Python.
-          */
-          analysis:
-            aiData,
+          message:
+            "Analysis processed successfully",
+
+          result: {
+            childId:
+              child._id,
+
+            assignedDoctorId,
+
+            diagnosis,
+
+            summary,
+
+            dominantEmotion,
+
+            confidence:
+              averageConfidence,
+
+            priority,
+
+            analyses: {
+              text:
+                textAnalysis,
+
+              image:
+                imageAnalysis,
+
+              voice:
+                voiceAnalysis,
+            },
+          },
 
           case:
             updatedCase,
 
-          message:
-            "Analysis processed and case updated successfully",
+          rawAiResult:
+            aiData,
         });
     } catch (error) {
       console.error(
         "AI INTEGRATION ERROR:",
+
         error.response?.data ||
-          error.message ||
-          error
+        error.message ||
+        error
       );
 
-      /*
-        عند فشل التحليل أو الحفظ،
-        نمسح الصورة المؤقتة.
-      */
-      removeUploadedFile(
-        file?.path
-      );
+      /* =========================
+         AXIOS ERRORS
+      ========================= */
 
       if (
         axios.isAxiosError(
@@ -864,54 +1261,89 @@ router.post(
           return res
             .status(504)
             .json({
+              success:
+                false,
+
               error:
-                "The AI engine took too long to respond",
+                "The AI service took too long to respond",
             });
         }
 
         if (
           error.code ===
             "ECONNREFUSED" ||
-          error.message?.includes(
+          String(
+            error.message ||
+            ""
+          ).includes(
             "ECONNREFUSED"
           )
         ) {
           return res
             .status(503)
             .json({
+              success:
+                false,
+
               error:
-                "The Python AI service is not running on port 8000",
+                "The Python AI service is not running or cannot be reached",
             });
         }
 
         const pythonError =
-          error.response?.data
+          error.response
+            ?.data
             ?.detail ||
-          error.response?.data
-            ?.error;
+          error.response
+            ?.data
+            ?.error ||
+          error.response
+            ?.data
+            ?.message;
 
         return res
           .status(
             error.response
-              ?.status || 500
+              ?.status ||
+            500
           )
           .json({
+            success:
+              false,
+
             error:
-              pythonError ||
-              "Failed to connect to the AI engine",
+              toText(
+                pythonError,
+
+                "Failed to connect to the AI service"
+              ),
           });
       }
+
+      /* =========================
+         GENERAL ERRORS
+      ========================= */
 
       return res
         .status(500)
         .json({
+          success:
+            false,
+
           error:
             error.message ||
-            "Failed to process the AI analysis or update the database",
+            "Failed to process the AI analysis",
         });
+    } finally {
+      /*
+        نمسح الملفات المؤقتة بعد
+        انتهاء التحليل ورفعها على Cloudinary.
+      */
+      removeRequestFiles(
+        files
+      );
     }
   }
 );
-
->>>>>>> Stashed changes
 module.exports = router;
+

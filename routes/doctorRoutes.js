@@ -1,100 +1,35 @@
-
 const express = require("express");
 const mongoose = require("mongoose");
 
-const router = express.Router();
-<<<<<<< Updated upstream
-const Case = require('../models/Case');
-const { checkToken } = require('../middleware/authMiddleware'); 
-const mongoose = require('mongoose');
-const Notification = require('../models/Notification');
-const { sendNotification:sendParentNotification } = require('../services/notificationPService');
-
-=======
->>>>>>> Stashed changes
-
 const Case = require("../models/Case");
+const Notification = require("../models/Notification");
+const { checkToken } = require("../middleware/authMiddleware");
 const {
-  checkToken,
-} = require("../middleware/authMiddleware");
+  sendNotification: sendParentNotification,
+} = require("../services/notificationPService");
+
+const router = express.Router();
 
 /* =====================================================
    CHECK DOCTOR
 ===================================================== */
 
-<<<<<<< Updated upstream
-router.get('/pending-cases', checkToken, async (req, res) => {
-  try {
-        const cases = await Case.find({ doctorId: req.user.id, status: 'pending' })
-            .populate('childId', 'name') // جلب الاسم فقط
-            .sort({ createdAt: -1 })
-            .limit(5); // جلب أحدث 5 حالات فقط كما هو واضح في الصورة
-
-        const formattedCases = cases.map(c => ({
-            _id: c._id,
-            childName: c.childId.name,
-            childId: c.childId._id, // أو الـ ID الذي يظهر في الصورة
-            status: c.status,
-            summary: c.aiDiagnosis || "No summary available", // هنا يظهر الملخص الصغير
-            type: c.dominantEmotion || "General" // هنا يظهر نوع المؤشر (مثل Anxiety Indicators)
-        }));
-        
-        res.json(formattedCases);
-    } catch (err) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-router.get('/recent-activity', checkToken, async (req, res) => {
-    try {
-        const doctorId = req.user.id;
-        
-        // نجلب آخر 5 حالات تم التعامل معها
-        const recentCases = await Case.find({ doctorId })
-            .sort({ lastAnalysisDate: -1 })
-            .limit(5);
-
-        const activityLog = recentCases.map(c => {
-            let activity = "";
-            let time = c.lastAnalysisDate;
-            
-            // المنطق الذكي للنشاط:
-            if (c.status === 'reviewed') {
-                activity = "تم إرسال رد الطبيب";
-            } else if (c.analysisTimeline && c.analysisTimeline.length > 0) {
-                activity = "تم رفع تحليل جديد";
-            }
-            
-            return { activity, time };
-        });
-
-        res.json(activityLog);
-    } catch (err) {
-        res.status(500).json({ error: 'Server error' });
-=======
 const checkDoctor = (req, res, next) => {
-  if (
-    !req.user ||
-    req.user.role !== "doctor"
-  ) {
+  if (!req.user || req.user.role !== "doctor") {
     return res.status(403).json({
       success: false,
-      message:
-        "Access denied. Doctors only.",
+      message: "Access denied. Doctors only.",
     });
   }
 
-  if (
-    req.user.verificationStatus !==
-    "approved"
-  ) {
+  if (req.user.verificationStatus !== "approved") {
     return res.status(403).json({
       success: false,
-      message:
-        "Doctor account is not approved.",
+      message: "Doctor account is not approved.",
     });
   }
 
-  next();
+  return next();
 };
 
 /*
@@ -109,18 +44,22 @@ router.use(checkDoctor);
    HELPERS
 ===================================================== */
 
-const isValidObjectId = (id) => {
-  return mongoose.Types.ObjectId.isValid(
-    id
-  );
+const getDoctorId = (req) => req.user._id || req.user.id;
+
+const getDoctorObjectId = (req) => {
+  const doctorId = getDoctorId(req);
+
+  if (!mongoose.Types.ObjectId.isValid(doctorId)) {
+    return null;
+  }
+
+  return new mongoose.Types.ObjectId(String(doctorId));
 };
 
-const escapeRegex = (value) => {
-  return String(value || "").replace(
-    /[.*+?^${}()|[\]\\]/g,
-    "\\$&"
-  );
-};
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+const escapeRegex = (value) =>
+  String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const allowedStatuses = [
   "pending",
@@ -134,284 +73,205 @@ const allowedStatuses = [
    GET /api/doctor/dashboard-stats
 ===================================================== */
 
-router.get(
-  "/dashboard-stats",
-  async (req, res) => {
-    try {
-      const doctorId =
-        req.user._id;
+router.get("/dashboard-stats", async (req, res) => {
+  try {
+    const doctorId = getDoctorId(req);
 
-      const oneWeekAgo =
-        new Date();
+    const oneWeekAgo = new Date();
 
-      oneWeekAgo.setDate(
-        oneWeekAgo.getDate() - 7
-      );
+    oneWeekAgo.setDate(
+      oneWeekAgo.getDate() - 7
+    );
 
-      const [
-        pendingCases,
-        reviewedCases,
-        newThisWeek,
-        childrenIds,
-      ] = await Promise.all([
-        Case.countDocuments({
-          doctorId,
-          status: "pending",
-        }),
+    const [
+      pendingCases,
+      reviewedCases,
+      newThisWeek,
+      childrenIds,
+    ] = await Promise.all([
+      Case.countDocuments({
+        doctorId,
+        status: "pending",
+      }),
 
-        Case.countDocuments({
-          doctorId,
-          status: "reviewed",
-        }),
+      Case.countDocuments({
+        doctorId,
+        status: "reviewed",
+      }),
 
-        Case.countDocuments({
-          doctorId,
-          createdAt: {
-            $gte: oneWeekAgo,
-          },
-        }),
+      Case.countDocuments({
+        doctorId,
+        createdAt: {
+          $gte: oneWeekAgo,
+        },
+      }),
 
-        Case.distinct("childId", {
-          doctorId,
-        }),
-      ]);
+      Case.distinct("childId", {
+        doctorId,
+      }),
+    ]);
 
-      return res.status(200).json({
-        pendingCases,
-        reviewedCases,
-        newThisWeek,
-        childrenFollowed:
-          childrenIds.length,
-      });
-    } catch (error) {
-      console.error(
-        "DASHBOARD STATS ERROR:",
-        error
-      );
+    return res.status(200).json({
+      pendingCases,
+      reviewedCases,
+      newThisWeek,
+      childrenFollowed: childrenIds.length,
+    });
+  } catch (error) {
+    console.error(
+      "DASHBOARD STATS ERROR:",
+      error
+    );
 
-      return res.status(500).json({
-        success: false,
-        message:
-          "Server error while fetching dashboard statistics.",
-      });
->>>>>>> Stashed changes
-    }
+    return res.status(500).json({
+      success: false,
+      message:
+        "Server error while fetching dashboard statistics.",
+    });
   }
-);
+});
 
 /* =====================================================
    PENDING CASES
    GET /api/doctor/pending-cases
 ===================================================== */
 
-router.get(
-  "/pending-cases",
-  async (req, res) => {
-    try {
-<<<<<<< Updated upstream
-        
-       const caseData = await Case.findById(req.params.caseId)
-            .populate('childId', 'name age gender');
-        if (!caseData) {
-            return res.status(404).json({ msg: 'Case not found' });
-        }
-        res.json({childInfo: {
-                name: caseData.childId.name,
-                age: caseData.childId.age,
-                },
-           progressStatus: {
-                label: caseData.childProgress, // "Improving"
-                description: "Showing gradual improvement, but still needs monitoring." // يمكن جعلها ديناميكية لاحقاً
-            },
-            entriesInfo: {
-                totalEntries: caseData.entriesCount,
-                lastAnalysisDate: caseData.lastAnalysisDate
-            },
-            currentAnalysis: {
-                text: caseData.textAnalyses && caseData.textAnalyses.length > 0 
-                      ? caseData.textAnalyses[caseData.textAnalyses.length - 1].content 
-                      : "لا يوجد تحليل نصي متاح حالياً."
-            },
-            emotionData: {
-                emotion: caseData.dominantEmotion, // "Anxiety"
-                percentage: caseData.emotionPercentage, // "75%"
-                keywords: ["School", "Fear", "Sleep", "Stress"] // هذه يجب استخراجها من الـ patterns في الـ Schema
-            },
-            aiSummary: caseData.aiSummary,
-            status: caseData.status,
-            doctorRecommendation: caseData.doctorRecommendation || ""
-        });
-        
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ error: 'Server error while fetching case details' });
-    }
-});
-router.get('/child-overview/:childId', checkToken, async (req, res) => {
-    try {
-        const latestCase = await Case.findOne({ 
-            doctorId: req.user.id, 
-            childId: req.params.childId 
-=======
-      const cases = await Case.find({
-        doctorId: req.user._id,
-        status: "pending",
+router.get("/pending-cases", async (req, res) => {
+  try {
+    const doctorId = getDoctorId(req);
+
+    const cases = await Case.find({
+      doctorId,
+      status: "pending",
+    })
+      .populate(
+        "childId",
+        "name age gender parentId"
+      )
+      .sort({
+        createdAt: -1,
       })
-        .populate(
-          "childId",
-          "name age gender parentId"
-        )
-        .sort({
-          createdAt: -1,
->>>>>>> Stashed changes
-        })
-        .lean();
+      .limit(5)
+      .lean();
 
-<<<<<<< Updated upstream
-        if (!latestCase) return res.status(404).json({ msg: 'No data found for this child' });
+    const formattedCases = cases
+      .filter(
+        (caseItem) =>
+          caseItem.childId !== null
+      )
+      .map((caseItem) => ({
+        ...caseItem,
 
-        res.json({
-            childInfo: latestCase.childId,
-            longTermSummary: latestCase.aiSummary, 
-            currentStatus: latestCase.status,    
-            emotionalTrend: latestCase.emotionalTrend,
-            mostFrequentEmotions: latestCase.frequentEmotions, 
-            analysisTimeline: latestCase.analysisTimeline, 
-           childProgress: latestCase.childProgress,
-            doctorRecommendations: latestCase.doctorRecommendations, 
-            recurringPatterns: latestCase.recurringPatterns
-        });
-    } catch (err) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-router.put('/review-case/:caseId', checkToken, async (req, res) => {
-    try {
-        const { doctorRecommendation } = req.body;
-        // 1. تحديث الحالة
-        const updatedCase = await Case.findByIdAndUpdate(
-            req.params.caseId,
-            { doctorRecommendation, status: 'reviewed' },
-            { new: true }
-        ).populate('childId'); // قمنا بعمل populate لجلب بيانات الطفل
+        childName:
+          caseItem.childId.name,
 
-        // 2. إرسال إشعار للأب تلقائياً
-         await sendParentNotification({
-    userId: updatedCase.childId.parentId, 
-    childId: updatedCase.childId._id,
-    title: "Analysis Reviewed",
-    message: `Dr. ${req.user.name} has reviewed your child's case.`,
-    type: 'doctor_review'
-});
+        summary:
+          caseItem.aiDiagnosis ||
+          caseItem.aiSummary ||
+          "No summary available",
 
-        res.json(updatedCase);
-    } catch (err) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
+        type:
+          caseItem.dominantEmotion ||
+          "General",
+      }));
 
-router.get('/home-history', checkToken, async (req, res) => {
-    try {
-        const doctorId = req.user.id;
-        const { status, search } = req.query;
-        
-        let query = { doctorId };
-        if (status && status !== 'All') {
-            query.status = status.toLowerCase();
-        }
-        let cases = await Case.find(query)
-            .populate({
-                path: 'childId',
-                select: 'name age',
-                match: search ? { name: { $regex: search, $options: 'i' } } : {} // البحث بالاسم (case-insensitive)
-            })
-            .sort({ createdAt: -1 });
-        const filteredCases = cases.filter(c => c.childId !== null);
-        
-        res.json(filteredCases);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-router.get('/history-stats', checkToken, async (req, res) => {
-    try {
-        const doctorId = new mongoose.Types.ObjectId(req.user.id);
-        const stats = await Case.aggregate([
-            { $match: { doctorId: doctorId } },
-            {
-                $group: {
-                    _id: null,
-                    totalCases: { $sum: 1 },
-                    pending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } },
-                    closed: { $sum: { $cond: [{ $eq: ["$status", "closed"] }, 1, 0] } },
-                    avgTimeMinutes: { $avg: { $divide: [{ $subtract: [new Date(), "$createdAt"] }, 60000] } } 
-                }
-            }
+    return res
+      .status(200)
+      .json(formattedCases);
+  } catch (error) {
+    console.error(
+      "PENDING CASES ERROR:",
+      error
+    );
 
-        ]);
-        const defaultStats = { totalCases: 0, pending: 0, closed: 0, avgTimeMinutes: 0 };
-        res.json(stats.length > 0 ? stats[0] : defaultStats);
-        
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-router.get('/history', checkToken, async (req, res) => {
-    try {
-        const doctorId = req.user.id;
-        const { status, search } = req.query;
-        
-        let query = { doctorId };
-        if (status && status !== 'All') {
-            query.status = status.toLowerCase();
-        }
-        let cases = await Case.find(query)
-            .populate({
-                path: 'childId',
-                select: 'name age',
-                match: search ? { name: { $regex: search, $options: 'i' } } : {} 
-            })
-            .sort({ createdAt: -1 });
-        const result = cases.filter(c => c.childId !== null);
-        
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-router.get('/weekly-stats', checkToken, async (req, res) => {
-    try {
-        const doctorId = req.user.id;
-        const newCases = await Case.countDocuments({ doctorId, createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } });
-        const reviewedCases = await Case.countDocuments({ doctorId, status: 'reviewed' });
-        const activeCases = await Case.countDocuments({ doctorId, status: 'pending' });
-=======
-      const validCases =
-        cases.filter(
-          (caseItem) =>
-            caseItem.childId !== null
-        );
->>>>>>> Stashed changes
-
-      return res
-        .status(200)
-        .json(validCases);
-    } catch (error) {
-      console.error(
-        "PENDING CASES ERROR:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          "Server error while fetching pending cases.",
-      });
-    }
+    return res.status(500).json({
+      success: false,
+      message:
+        "Server error while fetching pending cases.",
+    });
   }
-);
+});
+
+/* =====================================================
+   RECENT ACTIVITY
+   GET /api/doctor/recent-activity
+===================================================== */
+
+router.get("/recent-activity", async (req, res) => {
+  try {
+    const doctorId = getDoctorId(req);
+
+    const recentCases = await Case.find({
+      doctorId,
+    })
+      .populate("childId", "name")
+      .sort({
+        lastAnalysisDate: -1,
+        updatedAt: -1,
+      })
+      .limit(5)
+      .lean();
+
+    const activityLog = recentCases
+      .filter(
+        (caseItem) =>
+          caseItem.childId !== null
+      )
+      .map((caseItem) => {
+        let activity =
+          "تم تحديث الحالة";
+
+        if (
+          caseItem.status === "reviewed"
+        ) {
+          activity =
+            "تم إرسال رد الطبيب";
+        } else if (
+          Array.isArray(
+            caseItem.analysisTimeline
+          ) &&
+          caseItem.analysisTimeline
+            .length > 0
+        ) {
+          activity =
+            "تم رفع تحليل جديد";
+        }
+
+        return {
+          caseId: caseItem._id,
+
+          childId:
+            caseItem.childId?._id,
+
+          childName:
+            caseItem.childId?.name ||
+            "Unknown child",
+
+          activity,
+
+          time:
+            caseItem.lastAnalysisDate ||
+            caseItem.updatedAt ||
+            caseItem.createdAt,
+        };
+      });
+
+    return res
+      .status(200)
+      .json(activityLog);
+  } catch (error) {
+    console.error(
+      "RECENT ACTIVITY ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Server error while fetching recent activity.",
+    });
+  }
+});
 
 /* =====================================================
    CASE DETAILS
@@ -422,29 +282,23 @@ router.get(
   "/case-details/:caseId",
   async (req, res) => {
     try {
-      const { caseId } =
-        req.params;
+      const { caseId } = req.params;
+      const doctorId =
+        getDoctorId(req);
 
       if (
         !isValidObjectId(caseId)
       ) {
         return res.status(400).json({
           success: false,
-          message:
-            "Invalid case ID.",
+          message: "Invalid case ID.",
         });
       }
 
-      /*
-        البحث بالحالة والدكتور معًا
-        يمنع الدكتور من فتح حالة
-        تابعة لدكتور آخر.
-      */
       const caseData =
         await Case.findOne({
           _id: caseId,
-          doctorId:
-            req.user._id,
+          doctorId,
         }).populate(
           "childId",
           "name age gender parentId"
@@ -453,8 +307,7 @@ router.get(
       if (!caseData) {
         return res.status(404).json({
           success: false,
-          message:
-            "Case not found.",
+          message: "Case not found.",
         });
       }
 
@@ -466,27 +319,83 @@ router.get(
         });
       }
 
+      const latestTextAnalysis =
+        Array.isArray(
+          caseData.textAnalyses
+        ) &&
+        caseData.textAnalyses.length > 0
+          ? caseData.textAnalyses[
+              caseData.textAnalyses
+                .length - 1
+            ]
+          : null;
+
       return res.status(200).json({
         caseId: caseData._id,
+
         childId:
           caseData.childId._id,
 
         childInfo: {
-          id: caseData.childId._id,
+          id:
+            caseData.childId._id,
+
           name:
             caseData.childId.name,
+
           age:
             caseData.childId.age,
+
           gender:
             caseData.childId.gender,
+
           parentId:
             caseData.childId
               .parentId,
         },
 
+        progressStatus: {
+          label:
+            caseData.childProgress ||
+            caseData.status,
+
+          description:
+            caseData.progressDescription ||
+            "Showing gradual improvement, but still needs monitoring.",
+        },
+
+        entriesInfo: {
+          totalEntries:
+            caseData.entriesCount ||
+            0,
+
+          lastAnalysisDate:
+            caseData.lastAnalysisDate,
+        },
+
+        currentAnalysis: {
+          text:
+            latestTextAnalysis?.content ||
+            latestTextAnalysis?.text ||
+            "لا يوجد تحليل نصي متاح حالياً.",
+        },
+
+        emotionData: {
+          emotion:
+            caseData.dominantEmotion,
+
+          percentage:
+            caseData.emotionPercentage,
+
+          keywords:
+            caseData.recurringPatterns ||
+            [],
+        },
+
         analysisHistory: {
           drawings:
             caseData.drawings || [],
+
           textAnalyses:
             caseData.textAnalyses ||
             [],
@@ -510,6 +419,9 @@ router.get(
         aiSummary:
           caseData.aiSummary,
 
+        childProgress:
+          caseData.childProgress,
+
         status:
           caseData.status,
 
@@ -517,7 +429,8 @@ router.get(
           caseData.priority,
 
         doctorRecommendation:
-          caseData.doctorRecommendation,
+          caseData.doctorRecommendation ||
+          "",
 
         doctorRecommendations:
           caseData.doctorRecommendations ||
@@ -542,36 +455,6 @@ router.get(
           "Server error while fetching case details.",
       });
     }
-<<<<<<< Updated upstream
-});
-
-// 1. جلب الإشعارات (مع خيار التصفية بين الكل وغير المقروء)
-router.get('/notifications', checkToken, async (req, res) => {
-    try {
-        const { unreadOnly } = req.query;
-        let query = { doctorId: req.user.id };
-        if (unreadOnly === 'true') query.isRead = false;
-
-        const notifications = await Notification.find(query)
-            .sort({ createdAt: -1 }); // الترتيب من الأحدث للأقدم
-
-        res.json(notifications);
-    } catch (err) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// 2. تحديث الكل إلى "مقروء" (زر Mark all as read في الصور)
-router.put('/notifications/mark-all-read', checkToken, async (req, res) => {
-    try {
-        await Notification.updateMany({ doctorId: req.user.id, isRead: false }, { isRead: true });
-        res.json({ message: "All notifications marked as read." });
-    } catch (err) {
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-module.exports = router;
-=======
   }
 );
 
@@ -587,6 +470,9 @@ router.get(
       const { childId } =
         req.params;
 
+      const doctorId =
+        getDoctorId(req);
+
       if (
         !isValidObjectId(childId)
       ) {
@@ -599,8 +485,7 @@ router.get(
 
       const latestCase =
         await Case.findOne({
-          doctorId:
-            req.user._id,
+          doctorId,
           childId,
         })
           .populate(
@@ -631,12 +516,16 @@ router.get(
         childInfo: {
           id:
             latestCase.childId._id,
+
           name:
             latestCase.childId.name,
+
           age:
             latestCase.childId.age,
+
           gender:
             latestCase.childId.gender,
+
           parentId:
             latestCase.childId
               .parentId,
@@ -666,8 +555,12 @@ router.get(
           latestCase.analysisTimeline ||
           [],
 
+        childProgress:
+          latestCase.childProgress,
+
         doctorRecommendation:
-          latestCase.doctorRecommendation,
+          latestCase.doctorRecommendation ||
+          "",
 
         doctorRecommendations:
           latestCase.doctorRecommendations ||
@@ -704,6 +597,9 @@ router.put(
       const { caseId } =
         req.params;
 
+      const doctorId =
+        getDoctorId(req);
+
       const doctorRecommendation =
         String(
           req.body
@@ -735,8 +631,7 @@ router.put(
         await Case.findOneAndUpdate(
           {
             _id: caseId,
-            doctorId:
-              req.user._id,
+            doctorId,
           },
           {
             $set: {
@@ -744,14 +639,11 @@ router.put(
               status: "reviewed",
             },
 
-            /*
-              حفظ التوصية الحالية
-              داخل سجل التوصيات أيضًا.
-            */
             $push: {
               doctorRecommendations: {
                 note:
                   doctorRecommendation,
+
                 date: new Date(),
               },
             },
@@ -773,10 +665,53 @@ router.put(
         });
       }
 
+      let notificationSent =
+        false;
+
+      if (
+        updatedCase.childId
+          ?.parentId
+      ) {
+        try {
+          await sendParentNotification({
+            userId:
+              updatedCase.childId
+                .parentId,
+
+            childId:
+              updatedCase.childId._id,
+
+            title:
+              "Analysis Reviewed",
+
+            message: `Dr. ${
+              req.user.name ||
+              "Doctor"
+            } has reviewed your child's case.`,
+
+            type:
+              "doctor_review",
+          });
+
+          notificationSent = true;
+        } catch (
+          notificationError
+        ) {
+          console.error(
+            "PARENT NOTIFICATION ERROR:",
+            notificationError
+          );
+        }
+      }
+
       return res.status(200).json({
         success: true,
+
         message:
           "Case reviewed successfully.",
+
+        notificationSent,
+
         case: updatedCase,
       });
     } catch (error) {
@@ -804,7 +739,7 @@ const getDoctorHistory = async (
 ) => {
   try {
     const doctorId =
-      req.user._id;
+      getDoctorId(req);
 
     const status =
       String(
@@ -852,6 +787,7 @@ const getDoctorHistory = async (
     )
       .populate({
         path: "childId",
+
         select:
           "name age gender parentId",
 
@@ -860,6 +796,7 @@ const getDoctorHistory = async (
               name: {
                 $regex:
                   safeSearch,
+
                 $options: "i",
               },
             }
@@ -923,9 +860,18 @@ router.get(
   async (req, res) => {
     try {
       const doctorId =
-        new mongoose.Types.ObjectId(
-          req.user._id
-        );
+        getDoctorId(req);
+
+      const doctorObjectId =
+        getDoctorObjectId(req);
+
+      if (!doctorObjectId) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid doctor ID.",
+        });
+      }
 
       const [
         totalCases,
@@ -959,15 +905,12 @@ router.get(
           status: "improving",
         }),
 
-        /*
-          حساب متوسط وقت المراجعة
-          من وقت إنشاء الحالة حتى
-          تاريخ أول توصية للدكتور.
-        */
         Case.aggregate([
           {
             $match: {
-              doctorId,
+              doctorId:
+                doctorObjectId,
+
               "doctorRecommendations.0":
                 {
                   $exists: true,
@@ -1020,7 +963,11 @@ router.get(
       ]);
 
       const avgTimeMinutes =
-        averageResult.length > 0
+        averageResult.length > 0 &&
+        Number.isFinite(
+          averageResult[0]
+            .avgTimeMinutes
+        )
           ? Number(
               averageResult[0]
                 .avgTimeMinutes.toFixed(
@@ -1062,12 +1009,18 @@ router.get(
   async (req, res) => {
     try {
       const doctorId =
-        req.user._id;
+        getDoctorId(req);
 
       const doctorObjectId =
-        new mongoose.Types.ObjectId(
-          doctorId
-        );
+        getDoctorObjectId(req);
+
+      if (!doctorObjectId) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid doctor ID.",
+        });
+      }
 
       const oneWeekAgo =
         new Date(
@@ -1088,15 +1041,12 @@ router.get(
       ] = await Promise.all([
         Case.countDocuments({
           doctorId,
+
           createdAt: {
             $gte: oneWeekAgo,
           },
         }),
 
-        /*
-          الحالات التي تمت مراجعتها
-          خلال آخر سبعة أيام.
-        */
         Case.countDocuments({
           doctorId,
           status: "reviewed",
@@ -1229,6 +1179,108 @@ router.get(
   }
 );
 
-module.exports = router;
+/* =====================================================
+   NOTIFICATIONS
+   GET /api/doctor/notifications
+===================================================== */
 
->>>>>>> Stashed changes
+router.get(
+  "/notifications",
+  async (req, res) => {
+    try {
+      const doctorId =
+        getDoctorId(req);
+
+      const unreadOnly =
+        String(
+          req.query.unreadOnly ||
+            ""
+        ).toLowerCase();
+
+      const query = {
+        doctorId,
+      };
+
+      if (
+        unreadOnly === "true"
+      ) {
+        query.isRead = false;
+      }
+
+      const notifications =
+        await Notification.find(
+          query
+        )
+          .sort({
+            createdAt: -1,
+          })
+          .lean();
+
+      return res
+        .status(200)
+        .json(notifications);
+    } catch (error) {
+      console.error(
+        "GET NOTIFICATIONS ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Server error while fetching notifications.",
+      });
+    }
+  }
+);
+
+/* =====================================================
+   MARK ALL NOTIFICATIONS AS READ
+   PUT /api/doctor/notifications/mark-all-read
+===================================================== */
+
+router.put(
+  "/notifications/mark-all-read",
+  async (req, res) => {
+    try {
+      const doctorId =
+        getDoctorId(req);
+
+      const result =
+        await Notification.updateMany(
+          {
+            doctorId,
+            isRead: false,
+          },
+          {
+            $set: {
+              isRead: true,
+            },
+          }
+        );
+
+      return res.status(200).json({
+        success: true,
+
+        message:
+          "All notifications marked as read.",
+
+        modifiedCount:
+          result.modifiedCount || 0,
+      });
+    } catch (error) {
+      console.error(
+        "MARK NOTIFICATIONS READ ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Server error while updating notifications.",
+      });
+    }
+  }
+);
+
+module.exports = router;

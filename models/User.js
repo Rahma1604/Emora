@@ -1,22 +1,11 @@
-<<<<<<< Updated upstream
-const mongoose=require('mongoose');
-const UserSchema=new mongoose.Schema({
-    fullName:{type:String,required:true},
-    email:{type:String,required:true,unique:true},
-    password:{type:String,required:true},
-    role:{type:String,enum:['parent','doctor', 'admin'],default:'parent'},
-    
-    verificationStatus:{type:String,
-        enum:['pending', 'approved', 'rejected'],
-        default: 'pending' 
-    },
-    isVerified: { type: Boolean, default: false }, 
-    verificationCode: String,
-=======
+
 const mongoose = require("mongoose");
->>>>>>> Stashed changes
 
 const UserSchema = new mongoose.Schema({
+  /* =========================
+     Basic Account Information
+  ========================= */
+
   fullName: {
     type: String,
     required: true,
@@ -38,47 +27,8 @@ const UserSchema = new mongoose.Schema({
 
   role: {
     type: String,
-    enum: ["parent", "doctor"],
+    enum: ["parent", "doctor", "admin"],
     default: "parent",
-  },
-
-  verificationStatus: {
-    type: String,
-    enum: [
-      "not_started",
-      "draft",
-      "pending",
-      "approved",
-      "rejected",
-    ],
-    default: "pending",
-  },
-
-  verificationStep: {
-    type: String,
-    enum: [
-      "intro",
-      "professional-info",
-      "documents",
-      "review",
-      "submitted",
-    ],
-    default: "intro",
-  },
-
-  isVerified: {
-    type: Boolean,
-    default: false,
-  },
-
-  verificationCode: {
-    type: String,
-    default: null,
-  },
-
-  createdAt: {
-    type: Date,
-    default: Date.now,
   },
 
   profilePic: {
@@ -105,52 +55,132 @@ const UserSchema = new mongoose.Schema({
     default: "",
   },
 
+  /* =========================
+     Email Verification
+  ========================= */
+
+  isVerified: {
+    type: Boolean,
+    default: false,
+  },
+
+  verificationCode: {
+    type: String,
+    default: null,
+  },
+
+  /* =========================
+     Password Reset
+  ========================= */
+
   resetPasswordToken: {
     type: String,
+    default: null,
   },
 
   resetPasswordExpires: {
     type: Date,
+    default: null,
   },
+
+  /* =========================
+     Doctor Verification Status
+  ========================= */
+
+  verificationStatus: {
+    type: String,
+    enum: [
+      "not_started",
+      "draft",
+      "pending",
+      "approved",
+      "rejected",
+    ],
+    default: "pending",
+  },
+
+  verificationStep: {
+    type: String,
+    enum: [
+      "intro",
+      "professional-info",
+      "documents",
+      "review",
+      "submitted",
+    ],
+    default: "intro",
+  },
+
+  rejectionReason: {
+    type: String,
+    trim: true,
+    default: "",
+  },
+
+  verificationSubmittedAt: {
+    type: Date,
+    default: null,
+  },
+
+  approvedAt: {
+    type: Date,
+    default: null,
+  },
+
+  /* =========================
+     Doctor Professional Info
+  ========================= */
 
   nationalIdNumber: {
     type: String,
     trim: true,
+    default: "",
   },
 
   professionalType: {
     type: String,
-    default: "Child Psychiatrist",
     trim: true,
+    default: "Child Psychiatrist",
   },
 
   specialization: {
     type: String,
     trim: true,
+    default: "",
   },
 
   practiceLicenseNumber: {
     type: String,
     trim: true,
+    default: "",
   },
 
   syndicateRegistrationNumber: {
     type: String,
     trim: true,
+    default: "",
   },
 
   university: {
     type: String,
     trim: true,
+    default: "",
   },
 
   graduationYear: {
     type: Number,
+    default: null,
   },
 
   yearsOfExperience: {
     type: Number,
+    default: null,
+    min: 0,
   },
+
+  /* =========================
+     Doctor Document URLs
+  ========================= */
 
   doctorDocuments: {
     nationalIdFront: {
@@ -162,31 +192,6 @@ const UserSchema = new mongoose.Schema({
       type: String,
       default: "",
     },
-<<<<<<< Updated upstream
-verificationStep: { 
-    type: String, 
-    enum: ['intro', 'documents', 'review', 'submitted'], 
-    default: 'intro' 
-},
-rejectionReason: { type: String, default: "" },
-verificationSubmittedAt: { type: Date },
-documentNotes: {
-    nationalIdFront: { type: String, default: "" },
-    nationalIdBack: { type: String, default: "" },
-    syndicateCardFront: { type: String, default: "" },
-    syndicateCardBack: { type: String, default: "" },
-    graduationCertificate: { type: String, default: "" },
-    specializationCertificate: { type: String, default: "" },
-    practiceLicense: { type: String, default: "" },
-    recentSelfie: { type: String, default: "" }
-},
-    approvedAt: { type: Date },
-
-
-});
-
-module.exports=mongoose.model('User',UserSchema);
-=======
 
     syndicateCardFront: {
       type: String,
@@ -218,6 +223,10 @@ module.exports=mongoose.model('User',UserSchema);
       default: "",
     },
   },
+
+  /* =========================
+     Admin Document Decisions
+  ========================= */
 
   documentsVerification: {
     nationalIdFront: {
@@ -261,17 +270,59 @@ module.exports=mongoose.model('User',UserSchema);
     },
   },
 
-  verificationSubmittedAt: {
-    type: Date,
+  /* =========================
+     Admin Document Notes
+  ========================= */
+
+  documentNotes: {
+    nationalIdFront: {
+      type: String,
+      default: "",
+    },
+
+    nationalIdBack: {
+      type: String,
+      default: "",
+    },
+
+    syndicateCardFront: {
+      type: String,
+      default: "",
+    },
+
+    syndicateCardBack: {
+      type: String,
+      default: "",
+    },
+
+    graduationCertificate: {
+      type: String,
+      default: "",
+    },
+
+    specializationCertificate: {
+      type: String,
+      default: "",
+    },
+
+    practiceLicense: {
+      type: String,
+      default: "",
+    },
+
+    recentSelfie: {
+      type: String,
+      default: "",
+    },
   },
 
-  approvedAt: {
+  createdAt: {
     type: Date,
+    default: Date.now,
   },
 });
 
-module.exports = mongoose.model(
-  "User",
-  UserSchema
-);
->>>>>>> Stashed changes
+module.exports =
+  mongoose.models.User ||
+  mongoose.model("User", UserSchema);
+

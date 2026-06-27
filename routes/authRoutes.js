@@ -28,7 +28,6 @@ const EMAIL_USER =
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
-
   auth: {
     user: EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -45,14 +44,15 @@ const normalizeEmail = (email) => {
     .toLowerCase();
 };
 
-const getErrorMessage = (
-  error,
-  fallbackMessage
-) => {
-  return (
-    error?.message ||
-    fallbackMessage ||
-    "An unexpected error occurred"
+const createLoginToken = (userId) => {
+  return jwt.sign(
+    {
+      id: userId,
+    },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: "1d",
+    }
   );
 };
 
@@ -67,18 +67,6 @@ const createDoctorVerificationToken = (
     process.env.JWT_SECRET,
     {
       expiresIn: "7d",
-    }
-  );
-};
-
-const createLoginToken = (userId) => {
-  return jwt.sign(
-    {
-      id: userId,
-    },
-    process.env.JWT_SECRET,
-    {
-      expiresIn: "1d",
     }
   );
 };
@@ -98,10 +86,6 @@ const createResetPasswordToken = (
   );
 };
 
-/*
-  يرجع رابط الملف الذي رفعه Multer
-  إلى Cloudinary.
-*/
 const getUploadedFileUrl = (
   files,
   fieldName
@@ -121,72 +105,36 @@ const getUploadedFileUrl = (
   );
 };
 
-/*
-  تشغيل Multer مع إرجاع رسالة خطأ
-  واضحة بدل سقوط السيرفر.
-*/
-const handleDoctorDocumentsUpload = (
-  req,
-  res,
-  next
-) => {
-  uploadDoctorDocs(
-    req,
-    res,
-    (error) => {
-      if (!error) {
-        return next();
-      }
-
-      console.error(
-        "DOCTOR DOCUMENT UPLOAD ERROR:",
-        error
-      );
-
-      if (
-        error.code ===
-        "LIMIT_FILE_SIZE"
-      ) {
-        return res.status(400).json({
-          msg:
-            "Each document must be 5 MB or less",
-        });
-      }
-
-      if (
-        error.code ===
-        "LIMIT_FILE_COUNT"
-      ) {
-        return res.status(400).json({
-          msg:
-            "Too many documents were uploaded",
-        });
-      }
-
-      if (
-        error.code ===
-        "LIMIT_UNEXPECTED_FILE"
-      ) {
-        return res.status(400).json({
-          msg:
-            "An unsupported document field was uploaded",
-        });
-      }
-
-      return res.status(400).json({
-        msg:
-          error.message ||
-          "Could not upload the documents",
-      });
-    }
-  );
+const publicUserData = (user) => {
+  return {
+    id: user._id,
+    name: user.fullName,
+    fullName: user.fullName,
+    email: user.email,
+    role: user.role,
+    profilePic:
+      user.profilePic || "",
+    phone:
+      user.phone || "",
+    city:
+      user.city || "",
+    bio:
+      user.bio || "",
+    isVerified:
+      user.isVerified,
+    verificationStatus:
+      user.verificationStatus,
+    verificationStep:
+      user.verificationStep,
+    specialization:
+      user.specialization || "",
+    professionalType:
+      user.professionalType || "",
+  };
 };
 
-
-
-
 /* =====================================================
-   PROFILE IMAGE UPLOAD HANDLER
+   UPLOAD HANDLERS
 ===================================================== */
 
 const handleProfileUpload = (
@@ -211,98 +159,93 @@ const handleProfileUpload = (
       "LIMIT_FILE_SIZE"
     ) {
       return res.status(400).json({
+        success: false,
         msg:
           "Profile image must be 5 MB or less",
       });
     }
 
-<<<<<<< Updated upstream
-    const emailReal = /^[a-zA-Z0-9._%+-]+@(gmail|yahoo|icloud)\.com$/;
-    if (!emailReal.test(cleanEmail)) {
-      return res.status(400).json({ msg: 'please use right email' });
-    }
-
-    if (password !== confirmPassword) {
-      return res.status(400).json({ msg: "Pass don't match" });
-    }
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    
-    const files = req.files || {};
-    const doctorDocuments = {
-      nationalIdFront: files['nationalIdFront'] ? files['nationalIdFront'][0].path : "",
-      nationalIdBack: files['nationalIdBack'] ? files['nationalIdBack'][0].path : "",
-      syndicateCardFront: files['syndicateCardFront'] ? files['syndicateCardFront'][0].path : "",
-      syndicateCardBack: files['syndicateCardBack'] ? files['syndicateCardBack'][0].path : "",
-      graduationCertificate: files['graduationCertificate'] ? files['graduationCertificate'][0].path : "",
-      specializationCertificate: files['specializationCertificate'] ? files['specializationCertificate'][0].path : "",
-      practiceLicense: files['practiceLicense'] ? files['practiceLicense'][0].path : "",
-      recentSelfie: files['recentSelfie'] ? files['recentSelfie'][0].path : "",
-     };
-
-    await transporter.sendMail({
-      from: '"Emora App"<202227086@std.sci.cu.edu.eg>',
-      to: cleanEmail,
-      subject: 'Application Received - Emora App',
-      text: `Hi Dr. ${fullName},\n\nThank you for registering with Emora. Your documents have been uploaded successfully and our team/AI is currently reviewing your application.\n\nWe will notify you as soon as your account is activated.`,
-    });
-
-    const newDoctor = new User({
-      fullName,
-      email: cleanEmail,
-      password: hashedPassword,
-      role: 'doctor', 
-      verificationStatus: 'pending',
-      verificationStep: 'submitted',
-      isVerified: false, 
-      nationalIdNumber,
-      specialization,
-      practiceLicenseNumber,
-      syndicateRegistrationNumber,
-      university,
-      graduationYear: Number(graduationYear) || null,
-      yearsOfExperience: Number(yearsOfExperience) || 0,
-      doctorDocuments 
-    });
-
-    await newDoctor.save();
-
-    res.status(201).json({
-      status: 'PENDING_VERIFICATION',
-      message: 'Registration successful. Your application is under review.',
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-router.post('/register', async (req, res) => {
-  try {
-    const { fullName, email, password, confirmPassword, role } = req.body;
-    const cleanEmail = email.trim().toLowerCase();
-
-    const existingUser = await User.findOne({ email: cleanEmail });
-    if (existingUser) {
-=======
     if (
       error.code ===
       "LIMIT_UNEXPECTED_FILE"
     ) {
->>>>>>> Stashed changes
       return res.status(400).json({
+        success: false,
         msg:
           "Invalid profile image field",
       });
     }
 
     return res.status(400).json({
+      success: false,
       msg:
         error.message ||
         "Could not upload profile image",
     });
   });
 };
+
+const handleDoctorDocumentsUpload = (
+  req,
+  res,
+  next
+) => {
+  uploadDoctorDocs(
+    req,
+    res,
+    (error) => {
+      if (!error) {
+        return next();
+      }
+
+      console.error(
+        "DOCTOR DOCUMENT UPLOAD ERROR:",
+        error
+      );
+
+      if (
+        error.code ===
+        "LIMIT_FILE_SIZE"
+      ) {
+        return res.status(400).json({
+          success: false,
+          msg:
+            "Each document must be 5 MB or less",
+        });
+      }
+
+      if (
+        error.code ===
+        "LIMIT_FILE_COUNT"
+      ) {
+        return res.status(400).json({
+          success: false,
+          msg:
+            "Too many documents were uploaded",
+        });
+      }
+
+      if (
+        error.code ===
+        "LIMIT_UNEXPECTED_FILE"
+      ) {
+        return res.status(400).json({
+          success: false,
+          msg:
+            "An unsupported document field was uploaded",
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        msg:
+          error.message ||
+          "Could not upload the documents",
+      });
+    }
+  );
+};
+
 /* =====================================================
    REGISTER DOCTOR
    POST /api/auth/register-doctor
@@ -320,16 +263,18 @@ router.post(
         confirmPassword,
       } = req.body;
 
-      const cleanFullName = String(
-        fullName || ""
-      ).trim();
+      const cleanFullName =
+        String(
+          fullName || ""
+        ).trim();
 
       const cleanEmail =
         normalizeEmail(email);
 
-      const cleanSpecialization = String(
-        specialization || ""
-      ).trim();
+      const cleanSpecialization =
+        String(
+          specialization || ""
+        ).trim();
 
       if (
         !cleanFullName ||
@@ -339,13 +284,17 @@ router.post(
         !confirmPassword
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Full name, email, specialization, password and confirm password are required",
         });
       }
 
-      if (cleanFullName.length < 3) {
+      if (
+        cleanFullName.length < 3
+      ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Full name must be at least 3 characters",
         });
@@ -354,109 +303,120 @@ router.post(
       const emailRegex =
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-      if (!emailRegex.test(cleanEmail)) {
+      if (
+        !emailRegex.test(
+          cleanEmail
+        )
+      ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Please enter a valid email address",
         });
       }
 
       if (
-        cleanSpecialization.length < 3
+        cleanSpecialization.length <
+        3
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Please enter a valid specialization",
         });
       }
 
-      if (password.length < 8) {
+      if (
+        password.length < 8
+      ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Password must be at least 8 characters",
         });
       }
 
       if (
-        password !== confirmPassword
+        password !==
+        confirmPassword
       ) {
         return res.status(400).json({
-          msg: "Passwords do not match",
+          success: false,
+          msg:
+            "Passwords do not match",
         });
       }
 
       const existingUser =
         await User.findOne({
-          email: cleanEmail,
+          email:
+            cleanEmail,
         });
 
       if (existingUser) {
         return res.status(400).json({
+          success: false,
           msg:
             "Email already exists. Please use another email or login.",
         });
       }
 
-      const salt =
-        await bcrypt.genSalt(10);
-
       const hashedPassword =
         await bcrypt.hash(
           password,
-          salt
+          10
         );
 
-      const newDoctor = new User({
-        fullName: cleanFullName,
+      const newDoctor =
+        await User.create({
+          fullName:
+            cleanFullName,
 
-        email: cleanEmail,
+          email:
+            cleanEmail,
 
-        password: hashedPassword,
+          password:
+            hashedPassword,
 
-        role: "doctor",
+          role:
+            "doctor",
 
-        isVerified: false,
+          isVerified:
+            false,
 
-        verificationStatus:
-          "not_started",
+          verificationStatus:
+            "not_started",
 
-        verificationStep: "intro",
+          verificationStep:
+            "intro",
 
-        professionalType:
-          "Child Psychiatrist",
+          professionalType:
+            "Child Psychiatrist",
 
-        specialization:
-          cleanSpecialization,
-      });
-
-      await newDoctor.save();
+          specialization:
+            cleanSpecialization,
+        });
 
       const verificationToken =
         createDoctorVerificationToken(
           newDoctor._id
         );
 
-      /*
-        لا نوقف التسجيل إذا فشل
-        إرسال الإيميل مؤقتًا.
-      */
       try {
         await transporter.sendMail({
           from:
             `"Emora App" <${EMAIL_USER}>`,
 
-          to: cleanEmail,
+          to:
+            cleanEmail,
 
           subject:
             "Continue Your Professional Verification - Emora App",
 
-          text: `Hi Dr. ${newDoctor.fullName},
-
-Your Emora doctor account has been created successfully.
-
-Please continue the professional verification steps and upload the required documents.
-
-You will be able to access child cases after your application is approved.`,
+          text:
+            `Hi Dr. ${newDoctor.fullName},\n\n` +
+            "Your Emora doctor account has been created successfully.\n\n" +
+            "Please continue the professional verification steps and upload the required documents.",
         });
       } catch (mailError) {
         console.error(
@@ -466,6 +426,8 @@ You will be able to access child cases after your application is approved.`,
       }
 
       return res.status(201).json({
+        success: true,
+
         status:
           "VERIFICATION_NOT_STARTED",
 
@@ -474,25 +436,10 @@ You will be able to access child cases after your application is approved.`,
 
         verificationToken,
 
-        doctor: {
-          id: newDoctor._id,
-
-          fullName:
-            newDoctor.fullName,
-
-          email: newDoctor.email,
-
-          role: newDoctor.role,
-
-          specialization:
-            newDoctor.specialization,
-
-          verificationStatus:
-            newDoctor.verificationStatus,
-
-          verificationStep:
-            newDoctor.verificationStep,
-        },
+        doctor:
+          publicUserData(
+            newDoctor
+          ),
       });
     } catch (error) {
       console.error(
@@ -501,10 +448,10 @@ You will be able to access child cases after your application is approved.`,
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Doctor registration failed"
-        ),
+        success: false,
+        msg:
+          error.message ||
+          "Doctor registration failed",
       });
     }
   }
@@ -512,7 +459,6 @@ You will be able to access child cases after your application is approved.`,
 
 /* =====================================================
    GET DOCTOR VERIFICATION PROFILE
-   GET /api/auth/doctor-verification/profile
 ===================================================== */
 
 router.get(
@@ -520,18 +466,24 @@ router.get(
   checkDoctorVerificationToken,
   async (req, res) => {
     try {
-      const doctor = req.user;
+      const doctor =
+        req.user;
 
       return res.status(200).json({
+        success: true,
+
         doctor: {
-          id: doctor._id,
+          id:
+            doctor._id,
 
           fullName:
             doctor.fullName,
 
-          email: doctor.email,
+          email:
+            doctor.email,
 
-          role: doctor.role,
+          role:
+            doctor.role,
 
           professionalType:
             doctor.professionalType ||
@@ -542,7 +494,8 @@ router.get(
             "",
 
           specialization:
-            doctor.specialization || "",
+            doctor.specialization ||
+            "",
 
           licenseNumber:
             doctor.practiceLicenseNumber ||
@@ -553,26 +506,28 @@ router.get(
             "",
 
           university:
-            doctor.university || "",
+            doctor.university ||
+            "",
 
           graduationYear:
-            doctor.graduationYear !==
-              undefined &&
-            doctor.graduationYear !== null
-              ? String(
+            doctor.graduationYear ===
+              null ||
+            doctor.graduationYear ===
+              undefined
+              ? ""
+              : String(
                   doctor.graduationYear
-                )
-              : "",
+                ),
 
           experienceYears:
-            doctor.yearsOfExperience !==
-              undefined &&
-            doctor.yearsOfExperience !==
-              null
-              ? String(
+            doctor.yearsOfExperience ===
+              null ||
+            doctor.yearsOfExperience ===
+              undefined
+              ? ""
+              : String(
                   doctor.yearsOfExperience
-                )
-              : "",
+                ),
 
           verificationStatus:
             doctor.verificationStatus,
@@ -583,15 +538,14 @@ router.get(
       });
     } catch (error) {
       console.error(
-        "GET DOCTOR VERIFICATION PROFILE ERROR:",
+        "GET DOCTOR PROFILE ERROR:",
         error
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Could not load doctor verification profile"
-        ),
+        success: false,
+        msg:
+          "Could not load doctor profile",
       });
     }
   }
@@ -599,7 +553,6 @@ router.get(
 
 /* =====================================================
    SAVE DOCTOR PROFESSIONAL INFORMATION
-   PUT /api/auth/doctor-verification/professional-info
 ===================================================== */
 
 router.put(
@@ -607,6 +560,22 @@ router.put(
   checkDoctorVerificationToken,
   async (req, res) => {
     try {
+      if (
+        [
+          "pending",
+          "approved",
+        ].includes(
+          req.user
+            .verificationStatus
+        )
+      ) {
+        return res.status(409).json({
+          success: false,
+          msg:
+            "Professional information cannot be edited after submission or approval",
+        });
+      }
+
       const {
         fullName,
         nationalId,
@@ -618,27 +587,18 @@ router.put(
         experienceYears,
       } = req.body;
 
-      if (
-        req.user.verificationStatus ===
-          "pending" ||
-        req.user.verificationStatus ===
-          "approved"
-      ) {
-        return res.status(409).json({
-          msg:
-            "Professional information cannot be edited after submission or approval",
-        });
-      }
+      const cleanFullName =
+        String(
+          fullName || ""
+        ).trim();
 
-      const cleanFullName = String(
-        fullName || ""
-      ).trim();
-
-      const cleanNationalId = String(
-        nationalId || ""
-      )
-        .replace(/\D/g, "")
-        .trim();
+      const cleanNationalId =
+        String(
+          nationalId || ""
+        ).replace(
+          /\D/g,
+          ""
+        );
 
       const cleanSpecialization =
         String(
@@ -655,24 +615,29 @@ router.put(
           syndicateNumber || ""
         ).trim();
 
-      const cleanUniversity = String(
-        university || ""
-      ).trim();
+      const cleanUniversity =
+        String(
+          university || ""
+        ).trim();
 
       const graduationYearNumber =
-        Number(graduationYear);
+        Number(
+          graduationYear
+        );
 
       const experienceYearsNumber =
-        Number(experienceYears);
+        Number(
+          experienceYears
+        );
 
       const currentYear =
         new Date().getFullYear();
 
       if (
-        !cleanFullName ||
         cleanFullName.length < 3
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Please enter your complete legal name",
         });
@@ -684,39 +649,32 @@ router.put(
         )
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "National ID must contain 14 digits",
         });
       }
 
       if (
-        !cleanSpecialization ||
-        cleanSpecialization.length < 3
+        cleanSpecialization.length <
+        3
       ) {
         return res.status(400).json({
+          success: false,
           msg:
-            "Please enter a valid medical specialty",
+            "Please enter a valid specialization",
         });
       }
 
-      if (!cleanLicenseNumber) {
+      if (
+        !cleanLicenseNumber ||
+        !cleanSyndicateNumber ||
+        !cleanUniversity
+      ) {
         return res.status(400).json({
+          success: false,
           msg:
-            "Practice license number is required",
-        });
-      }
-
-      if (!cleanSyndicateNumber) {
-        return res.status(400).json({
-          msg:
-            "Medical syndicate number is required",
-        });
-      }
-
-      if (!cleanUniversity) {
-        return res.status(400).json({
-          msg:
-            "University name is required",
+            "License number, syndicate number and university are required",
         });
       }
 
@@ -724,11 +682,13 @@ router.put(
         !Number.isInteger(
           graduationYearNumber
         ) ||
-        graduationYearNumber < 1950 ||
+        graduationYearNumber <
+          1950 ||
         graduationYearNumber >
           currentYear
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Please enter a valid graduation year",
         });
@@ -738,10 +698,13 @@ router.put(
         !Number.isInteger(
           experienceYearsNumber
         ) ||
-        experienceYearsNumber < 0 ||
-        experienceYearsNumber > 70
+        experienceYearsNumber <
+          0 ||
+        experienceYearsNumber >
+          70
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Please enter valid years of experience",
         });
@@ -794,70 +757,37 @@ router.put(
 
       if (!updatedDoctor) {
         return res.status(404).json({
+          success: false,
           msg:
             "Doctor account was not found",
         });
       }
 
       return res.status(200).json({
+        success: true,
+
         message:
           "Professional information saved successfully",
 
-        nextStep: "documents",
+        nextStep:
+          "documents",
 
-        doctor: {
-          id: updatedDoctor._id,
-
-          fullName:
-            updatedDoctor.fullName,
-
-          email:
-            updatedDoctor.email,
-
-          professionalType:
-            updatedDoctor.professionalType,
-
-          nationalId:
-            updatedDoctor.nationalIdNumber,
-
-          specialization:
-            updatedDoctor.specialization,
-
-          licenseNumber:
-            updatedDoctor.practiceLicenseNumber,
-
-          syndicateNumber:
-            updatedDoctor.syndicateRegistrationNumber,
-
-          university:
-            updatedDoctor.university,
-
-          graduationYear: String(
-            updatedDoctor.graduationYear
+        doctor:
+          publicUserData(
+            updatedDoctor
           ),
-
-          experienceYears: String(
-            updatedDoctor.yearsOfExperience
-          ),
-
-          verificationStatus:
-            updatedDoctor.verificationStatus,
-
-          verificationStep:
-            updatedDoctor.verificationStep,
-        },
       });
     } catch (error) {
       console.error(
-        "SAVE DOCTOR PROFESSIONAL INFO ERROR:",
+        "SAVE PROFESSIONAL INFO ERROR:",
         error
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Could not save professional information"
-        ),
+        success: false,
+        msg:
+          error.message ||
+          "Could not save professional information",
       });
     }
   }
@@ -865,7 +795,6 @@ router.put(
 
 /* =====================================================
    GET DOCTOR DOCUMENTS
-   GET /api/auth/doctor-verification/documents
 ===================================================== */
 
 router.get(
@@ -873,24 +802,14 @@ router.get(
   checkDoctorVerificationToken,
   async (req, res) => {
     try {
-      const doctor =
-        await User.findById(
-          req.user._id
-        ).select(
-          "doctorDocuments verificationStatus verificationStep"
-        );
-
-      if (!doctor) {
-        return res.status(404).json({
-          msg:
-            "Doctor account was not found",
-        });
-      }
-
       const documents =
-        doctor.doctorDocuments || {};
+        req.user
+          .doctorDocuments ||
+        {};
 
       return res.status(200).json({
+        success: true,
+
         documents: {
           nationalIdFront:
             documents.nationalIdFront ||
@@ -922,22 +841,23 @@ router.get(
         },
 
         verificationStatus:
-          doctor.verificationStatus,
+          req.user
+            .verificationStatus,
 
         verificationStep:
-          doctor.verificationStep,
+          req.user
+            .verificationStep,
       });
     } catch (error) {
       console.error(
-        "GET DOCTOR DOCUMENTS ERROR:",
+        "GET DOCUMENTS ERROR:",
         error
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Could not load doctor documents"
-        ),
+        success: false,
+        msg:
+          "Could not load doctor documents",
       });
     }
   }
@@ -945,16 +865,6 @@ router.get(
 
 /* =====================================================
    UPLOAD DOCTOR DOCUMENTS
-   PUT /api/auth/doctor-verification/documents
-
-   FormData fields:
-   nationalIdFront
-   nationalIdBack
-   practiceLicense
-   syndicateCard
-   graduationCertificate
-   specializationCertificate
-   selfie
 ===================================================== */
 
 router.put(
@@ -964,194 +874,162 @@ router.put(
   async (req, res) => {
     try {
       if (
-        req.user.verificationStatus ===
-          "pending" ||
-        req.user.verificationStatus ===
-          "approved"
+        [
+          "pending",
+          "approved",
+        ].includes(
+          req.user
+            .verificationStatus
+        )
       ) {
         return res.status(409).json({
+          success: false,
           msg:
             "Documents cannot be edited after submission or approval",
         });
       }
 
-      /*
-        يجب إنهاء بيانات الطبيب
-        قبل رفع المستندات.
-      */
       if (
-        !req.user.nationalIdNumber ||
-        !req.user.practiceLicenseNumber ||
-        !req.user.syndicateRegistrationNumber ||
+        !req.user
+          .nationalIdNumber ||
+        !req.user
+          .practiceLicenseNumber ||
+        !req.user
+          .syndicateRegistrationNumber ||
         !req.user.university
       ) {
         return res.status(409).json({
+          success: false,
           msg:
             "Please complete your professional information first",
         });
       }
 
       const currentDocuments =
-        req.user.doctorDocuments || {};
+        req.user
+          .doctorDocuments ||
+        {};
 
-      const uploadedNationalIdFront =
-        getUploadedFileUrl(
-          req.files,
-          "nationalIdFront"
-        );
-
-      const uploadedNationalIdBack =
-        getUploadedFileUrl(
-          req.files,
-          "nationalIdBack"
-        );
-
-      const uploadedPracticeLicense =
-        getUploadedFileUrl(
-          req.files,
-          "practiceLicense"
-        );
-
-      const uploadedSyndicateCard =
-        getUploadedFileUrl(
-          req.files,
-          "syndicateCard"
-        );
-
-      const uploadedGraduationCertificate =
-        getUploadedFileUrl(
-          req.files,
-          "graduationCertificate"
-        );
-
-      const uploadedSpecializationCertificate =
-        getUploadedFileUrl(
-          req.files,
-          "specializationCertificate"
-        );
-
-      const uploadedSelfie =
-        getUploadedFileUrl(
-          req.files,
-          "selfie"
-        );
-
-      /*
-        نحتفظ بالمستند القديم إذا لم
-        يرفع المستخدم بديلًا جديدًا.
-      */
-      const documentValues = {
+      const doctorDocuments = {
         nationalIdFront:
-          uploadedNationalIdFront ||
-          currentDocuments.nationalIdFront ||
+          getUploadedFileUrl(
+            req.files,
+            "nationalIdFront"
+          ) ||
+          currentDocuments
+            .nationalIdFront ||
           "",
 
         nationalIdBack:
-          uploadedNationalIdBack ||
-          currentDocuments.nationalIdBack ||
+          getUploadedFileUrl(
+            req.files,
+            "nationalIdBack"
+          ) ||
+          currentDocuments
+            .nationalIdBack ||
           "",
 
         practiceLicense:
-          uploadedPracticeLicense ||
-          currentDocuments.practiceLicense ||
+          getUploadedFileUrl(
+            req.files,
+            "practiceLicense"
+          ) ||
+          currentDocuments
+            .practiceLicense ||
           "",
 
-        /*
-          الفرونت يرسل syndicateCard واحد.
-          نخزنه في syndicateCardFront
-          الموجود بالفعل داخل الموديل.
-        */
         syndicateCardFront:
-          uploadedSyndicateCard ||
-          currentDocuments.syndicateCardFront ||
+          getUploadedFileUrl(
+            req.files,
+            "syndicateCard"
+          ) ||
+          currentDocuments
+            .syndicateCardFront ||
           "",
 
         syndicateCardBack:
-          currentDocuments.syndicateCardBack ||
+          currentDocuments
+            .syndicateCardBack ||
           "",
 
         graduationCertificate:
-          uploadedGraduationCertificate ||
-          currentDocuments.graduationCertificate ||
+          getUploadedFileUrl(
+            req.files,
+            "graduationCertificate"
+          ) ||
+          currentDocuments
+            .graduationCertificate ||
           "",
 
         specializationCertificate:
-          uploadedSpecializationCertificate ||
-          currentDocuments.specializationCertificate ||
+          getUploadedFileUrl(
+            req.files,
+            "specializationCertificate"
+          ) ||
+          currentDocuments
+            .specializationCertificate ||
           "",
 
-        /*
-          الفرونت يسمي الملف selfie،
-          والموديل يسميه recentSelfie.
-        */
         recentSelfie:
-          uploadedSelfie ||
-          currentDocuments.recentSelfie ||
+          getUploadedFileUrl(
+            req.files,
+            "selfie"
+          ) ||
+          currentDocuments
+            .recentSelfie ||
           "",
       };
 
-      const missingDocuments = [];
+      const requiredDocuments = {
+        nationalIdFront:
+          doctorDocuments
+            .nationalIdFront,
+
+        nationalIdBack:
+          doctorDocuments
+            .nationalIdBack,
+
+        practiceLicense:
+          doctorDocuments
+            .practiceLicense,
+
+        syndicateCard:
+          doctorDocuments
+            .syndicateCardFront,
+
+        graduationCertificate:
+          doctorDocuments
+            .graduationCertificate,
+
+        specializationCertificate:
+          doctorDocuments
+            .specializationCertificate,
+
+        selfie:
+          doctorDocuments
+            .recentSelfie,
+      };
+
+      const missingDocuments =
+        Object.entries(
+          requiredDocuments
+        )
+          .filter(
+            ([, value]) =>
+              !value
+          )
+          .map(
+            ([name]) =>
+              name
+          );
 
       if (
-        !documentValues.nationalIdFront
-      ) {
-        missingDocuments.push(
-          "nationalIdFront"
-        );
-      }
-
-      if (
-        !documentValues.nationalIdBack
-      ) {
-        missingDocuments.push(
-          "nationalIdBack"
-        );
-      }
-
-      if (
-        !documentValues.practiceLicense
-      ) {
-        missingDocuments.push(
-          "practiceLicense"
-        );
-      }
-
-      if (
-        !documentValues.syndicateCardFront
-      ) {
-        missingDocuments.push(
-          "syndicateCard"
-        );
-      }
-
-      if (
-        !documentValues.graduationCertificate
-      ) {
-        missingDocuments.push(
-          "graduationCertificate"
-        );
-      }
-
-      if (
-        !documentValues.specializationCertificate
-      ) {
-        missingDocuments.push(
-          "specializationCertificate"
-        );
-      }
-
-      if (
-        !documentValues.recentSelfie
-      ) {
-        missingDocuments.push(
-          "selfie"
-        );
-      }
-
-      if (
-        missingDocuments.length > 0
+        missingDocuments.length >
+        0
       ) {
         return res.status(400).json({
+          success: false,
+
           msg:
             "Please upload all required documents",
 
@@ -1164,28 +1042,7 @@ router.put(
           req.user._id,
           {
             $set: {
-              doctorDocuments:
-                documentValues,
-
-              documentsVerification: {
-                nationalIdFront: false,
-
-                nationalIdBack: false,
-
-                syndicateCardFront: false,
-
-                syndicateCardBack: false,
-
-                graduationCertificate:
-                  false,
-
-                specializationCertificate:
-                  false,
-
-                practiceLicense: false,
-
-                recentSelfie: false,
-              },
+              doctorDocuments,
 
               verificationStatus:
                 "draft",
@@ -1198,83 +1055,86 @@ router.put(
             new: true,
             runValidators: true,
           }
-        ).select(
-          "doctorDocuments verificationStatus verificationStep"
-        );
+        ).select("-password");
 
       if (!updatedDoctor) {
         return res.status(404).json({
+          success: false,
           msg:
             "Doctor account was not found",
         });
       }
 
       return res.status(200).json({
+        success: true,
+
         message:
           "Documents uploaded successfully",
 
-        nextStep: "review",
+        nextStep:
+          "review",
 
-        verificationStatus:
-          updatedDoctor.verificationStatus,
-
-        verificationStep:
-          updatedDoctor.verificationStep,
+        doctor:
+          publicUserData(
+            updatedDoctor
+          ),
 
         documents: {
           nationalIdFront:
-            updatedDoctor.doctorDocuments
+            updatedDoctor
+              .doctorDocuments
               .nationalIdFront,
 
           nationalIdBack:
-            updatedDoctor.doctorDocuments
+            updatedDoctor
+              .doctorDocuments
               .nationalIdBack,
 
           practiceLicense:
-            updatedDoctor.doctorDocuments
+            updatedDoctor
+              .doctorDocuments
               .practiceLicense,
 
           syndicateCard:
-            updatedDoctor.doctorDocuments
+            updatedDoctor
+              .doctorDocuments
               .syndicateCardFront,
 
           graduationCertificate:
-            updatedDoctor.doctorDocuments
+            updatedDoctor
+              .doctorDocuments
               .graduationCertificate,
 
           specializationCertificate:
-            updatedDoctor.doctorDocuments
+            updatedDoctor
+              .doctorDocuments
               .specializationCertificate,
 
           selfie:
-            updatedDoctor.doctorDocuments
+            updatedDoctor
+              .doctorDocuments
               .recentSelfie,
         },
       });
     } catch (error) {
       console.error(
-        "SAVE DOCTOR DOCUMENTS ERROR:",
+        "UPLOAD DOCUMENTS ERROR:",
         error
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Could not save doctor documents"
-        ),
+        success: false,
+        msg:
+          error.message ||
+          "Could not save doctor documents",
       });
     }
   }
 );
 
-
 /* =====================================================
-   SUBMIT AND AUTO-APPROVE DOCTOR VERIFICATION
-   POST /api/auth/doctor-verification/submit
-
-   ملاحظة:
-   هذا الـRoute يقبل الدكتور تلقائيًا حاليًا
-   حتى نتمكن من تجربة فلو حساب الدكتور كاملًا.
+   SUBMIT DOCTOR VERIFICATION
+   AUTO APPROVE TEMPORARILY
 ===================================================== */
 
 router.post(
@@ -1282,35 +1142,43 @@ router.post(
   checkDoctorVerificationToken,
   async (req, res) => {
     try {
-      const doctor = await User.findById(
-        req.user._id
-      );
+      const doctor =
+        await User.findById(
+          req.user._id
+        );
 
       if (!doctor) {
         return res.status(404).json({
-          msg: "Doctor account was not found",
-        });
-      }
-
-      if (doctor.role !== "doctor") {
-        return res.status(403).json({
+          success: false,
           msg:
-            "Only doctor accounts can submit professional verification",
+            "Doctor account was not found",
         });
       }
 
-      /*
-        لو الحساب اتقبل قبل كده، نرجع له
-        Token عادي بدون تكرار التعديل.
-      */
       if (
-        doctor.verificationStatus ===
+        doctor.role !==
+        "doctor"
+      ) {
+        return res.status(403).json({
+          success: false,
+          msg:
+            "Doctor access only",
+        });
+      }
+
+      if (
+        doctor
+          .verificationStatus ===
         "approved"
       ) {
         const token =
-          createLoginToken(doctor._id);
+          createLoginToken(
+            doctor._id
+          );
 
         return res.status(200).json({
+          success: true,
+
           status:
             "VERIFICATION_APPROVED",
 
@@ -1319,109 +1187,62 @@ router.post(
 
           token,
 
-          user: {
-            id: doctor._id,
-
-            name: doctor.fullName,
-
-            fullName:
-              doctor.fullName,
-
-            email: doctor.email,
-
-            role: doctor.role,
-
-            profilePic:
-              doctor.profilePic,
-
-            specialization:
-              doctor.specialization,
-
-            professionalType:
-              doctor.professionalType,
-
-            isVerified:
-              doctor.isVerified,
-
-            verificationStatus:
-              doctor.verificationStatus,
-
-            verificationStep:
-              doctor.verificationStep,
-          },
+          user:
+            publicUserData(
+              doctor
+            ),
         });
       }
 
-      /*
-        التأكد من أن البيانات المهنية
-        تم إدخالها قبل إرسال الطلب.
-      */
-      const missingInformation = [];
+      const requiredInformation = {
+        fullName:
+          doctor.fullName,
 
-      if (!doctor.fullName) {
-        missingInformation.push(
-          "fullName"
-        );
-      }
+        nationalId:
+          doctor.nationalIdNumber,
 
-      if (!doctor.nationalIdNumber) {
-        missingInformation.push(
-          "nationalId"
-        );
-      }
+        specialization:
+          doctor.specialization,
 
-      if (!doctor.specialization) {
-        missingInformation.push(
-          "specialization"
-        );
-      }
+        licenseNumber:
+          doctor.practiceLicenseNumber,
 
-      if (
-        !doctor.practiceLicenseNumber
-      ) {
-        missingInformation.push(
-          "licenseNumber"
-        );
-      }
+        syndicateNumber:
+          doctor.syndicateRegistrationNumber,
 
-      if (
-        !doctor.syndicateRegistrationNumber
-      ) {
-        missingInformation.push(
-          "syndicateNumber"
-        );
-      }
+        university:
+          doctor.university,
 
-      if (!doctor.university) {
-        missingInformation.push(
-          "university"
-        );
-      }
+        graduationYear:
+          doctor.graduationYear,
+
+        experienceYears:
+          doctor.yearsOfExperience,
+      };
+
+      const missingInformation =
+        Object.entries(
+          requiredInformation
+        )
+          .filter(
+            ([, value]) =>
+              value ===
+                undefined ||
+              value === null ||
+              value === ""
+          )
+          .map(
+            ([name]) =>
+              name
+          );
 
       if (
-        doctor.graduationYear ===
-          undefined ||
-        doctor.graduationYear === null
-      ) {
-        missingInformation.push(
-          "graduationYear"
-        );
-      }
-
-      if (
-        doctor.yearsOfExperience ===
-          undefined ||
-        doctor.yearsOfExperience === null
-      ) {
-        missingInformation.push(
-          "experienceYears"
-        );
-      }
-
-      if (
-        missingInformation.length > 0
+        missingInformation.length >
+        0
       ) {
         return res.status(400).json({
+          success: false,
+
           msg:
             "Please complete all professional information before submitting",
 
@@ -1429,67 +1250,61 @@ router.post(
         });
       }
 
-      /*
-        التأكد من أن كل المستندات المطلوبة
-        موجودة بالفعل في Cloudinary.
-      */
       const documents =
-        doctor.doctorDocuments || {};
+        doctor
+          .doctorDocuments ||
+        {};
 
-      const missingDocuments = [];
+      const requiredDocuments = {
+        nationalIdFront:
+          documents
+            .nationalIdFront,
 
-      if (!documents.nationalIdFront) {
-        missingDocuments.push(
-          "nationalIdFront"
-        );
-      }
+        nationalIdBack:
+          documents
+            .nationalIdBack,
 
-      if (!documents.nationalIdBack) {
-        missingDocuments.push(
-          "nationalIdBack"
-        );
-      }
+        practiceLicense:
+          documents
+            .practiceLicense,
 
-      if (!documents.practiceLicense) {
-        missingDocuments.push(
-          "practiceLicense"
-        );
-      }
+        syndicateCard:
+          documents
+            .syndicateCardFront,
 
-      if (
-        !documents.syndicateCardFront
-      ) {
-        missingDocuments.push(
-          "syndicateCard"
-        );
-      }
+        graduationCertificate:
+          documents
+            .graduationCertificate,
 
-      if (
-        !documents.graduationCertificate
-      ) {
-        missingDocuments.push(
-          "graduationCertificate"
-        );
-      }
+        specializationCertificate:
+          documents
+            .specializationCertificate,
 
-      if (
-        !documents.specializationCertificate
-      ) {
-        missingDocuments.push(
-          "specializationCertificate"
-        );
-      }
+        selfie:
+          documents
+            .recentSelfie,
+      };
 
-      if (!documents.recentSelfie) {
-        missingDocuments.push(
-          "selfie"
-        );
-      }
+      const missingDocuments =
+        Object.entries(
+          requiredDocuments
+        )
+          .filter(
+            ([, value]) =>
+              !value
+          )
+          .map(
+            ([name]) =>
+              name
+          );
 
       if (
-        missingDocuments.length > 0
+        missingDocuments.length >
+        0
       ) {
         return res.status(400).json({
+          success: false,
+
           msg:
             "Please upload all required documents before submitting",
 
@@ -1497,12 +1312,9 @@ router.post(
         });
       }
 
-      const submittedAt = new Date();
+      const currentDate =
+        new Date();
 
-      /*
-        قبول تلقائي مؤقتًا حتى نكمل
-        تجربة فلو حساب الدكتور بالكامل.
-      */
       doctor.verificationStatus =
         "approved";
 
@@ -1510,43 +1322,50 @@ router.post(
         "submitted";
 
       doctor.verificationSubmittedAt =
-        submittedAt;
+        currentDate;
 
-      doctor.isVerified = true;
+      doctor.approvedAt =
+        currentDate;
 
-      /*
-        بما أن الحساب تم قبوله تلقائيًا،
-        نعتبر المستندات مقبولة حاليًا.
-      */
+      doctor.isVerified =
+        true;
+
       doctor.documentsVerification = {
-        nationalIdFront: true,
+        nationalIdFront:
+          true,
 
-        nationalIdBack: true,
+        nationalIdBack:
+          true,
 
-        syndicateCardFront: true,
+        syndicateCardFront:
+          true,
 
-        syndicateCardBack: false,
+        syndicateCardBack:
+          false,
 
-        graduationCertificate: true,
+        graduationCertificate:
+          true,
 
-        specializationCertificate: true,
+        specializationCertificate:
+          true,
 
-        practiceLicense: true,
+        practiceLicense:
+          true,
 
-        recentSelfie: true,
+        recentSelfie:
+          true,
       };
 
       await doctor.save();
 
-      /*
-        إصدار Token تسجيل دخول عادي،
-        لأن verificationToken مخصص فقط
-        لخطوات التوثيق.
-      */
       const token =
-        createLoginToken(doctor._id);
+        createLoginToken(
+          doctor._id
+        );
 
       return res.status(200).json({
+        success: true,
+
         status:
           "VERIFICATION_APPROVED",
 
@@ -1555,66 +1374,29 @@ router.post(
 
         token,
 
-        verificationStatus:
-          doctor.verificationStatus,
-
-        verificationStep:
-          doctor.verificationStep,
-
-        verificationSubmittedAt:
-          doctor.verificationSubmittedAt,
-
-        user: {
-          id: doctor._id,
-
-          name: doctor.fullName,
-
-          fullName:
-            doctor.fullName,
-
-          email: doctor.email,
-
-          role: doctor.role,
-
-          profilePic:
-            doctor.profilePic,
-
-          specialization:
-            doctor.specialization,
-
-          professionalType:
-            doctor.professionalType,
-
-          isVerified:
-            doctor.isVerified,
-
-          verificationStatus:
-            doctor.verificationStatus,
-
-          verificationStep:
-            doctor.verificationStep,
-        },
+        user:
+          publicUserData(
+            doctor
+          ),
       });
     } catch (error) {
       console.error(
-        "SUBMIT DOCTOR VERIFICATION ERROR:",
+        "SUBMIT VERIFICATION ERROR:",
         error
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Could not submit doctor verification"
-        ),
+        success: false,
+        msg:
+          error.message ||
+          "Could not submit doctor verification",
       });
     }
   }
 );
 
-
 /* =====================================================
    REGISTER PARENT
-   POST /api/auth/register
 ===================================================== */
 
 router.post(
@@ -1628,9 +1410,10 @@ router.post(
         confirmPassword,
       } = req.body;
 
-      const cleanFullName = String(
-        fullName || ""
-      ).trim();
+      const cleanFullName =
+        String(
+          fullName || ""
+        ).trim();
 
       const cleanEmail =
         normalizeEmail(email);
@@ -1642,13 +1425,17 @@ router.post(
         !confirmPassword
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Please fill all required fields",
         });
       }
 
-      if (cleanFullName.length < 3) {
+      if (
+        cleanFullName.length < 3
+      ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Full name must be at least 3 characters",
         });
@@ -1657,90 +1444,115 @@ router.post(
       const emailRegex =
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-      if (!emailRegex.test(cleanEmail)) {
+      if (
+        !emailRegex.test(
+          cleanEmail
+        )
+      ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Please enter a valid email address",
         });
       }
 
-      if (password.length < 8) {
+      if (
+        password.length < 8
+      ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Password must be at least 8 characters",
         });
       }
 
       if (
-        password !== confirmPassword
+        password !==
+        confirmPassword
       ) {
         return res.status(400).json({
-          msg: "Passwords do not match",
+          success: false,
+          msg:
+            "Passwords do not match",
         });
       }
 
       const existingUser =
         await User.findOne({
-          email: cleanEmail,
+          email:
+            cleanEmail,
         });
 
       if (existingUser) {
         return res.status(400).json({
+          success: false,
           msg:
             "Email already exists. Please use another email or login.",
         });
       }
 
-      const salt =
-        await bcrypt.genSalt(10);
-
       const hashedPassword =
         await bcrypt.hash(
           password,
-          salt
+          10
         );
 
       const verificationCode =
         Math.floor(
           1000 +
-            Math.random() * 9000
+          Math.random() *
+            9000
         ).toString();
 
-      await transporter.sendMail({
-        from:
-          `"Emora App" <${EMAIL_USER}>`,
+      const newUser =
+        await User.create({
+          fullName:
+            cleanFullName,
 
-        to: cleanEmail,
+          email:
+            cleanEmail,
 
-        subject:
-          "Verification Code - Emora App",
+          password:
+            hashedPassword,
 
-        text:
-          `Hi ${cleanFullName}, ` +
-          `your verification code is: ${verificationCode}`,
-      });
+          role:
+            "parent",
 
-      const newUser = new User({
-        fullName:
-          cleanFullName,
+          isVerified:
+            false,
 
-        email: cleanEmail,
+          verificationCode,
+        });
 
-        password:
-          hashedPassword,
+      try {
+        await transporter.sendMail({
+          from:
+            `"Emora App" <${EMAIL_USER}>`,
 
-        role: "parent",
+          to:
+            cleanEmail,
 
-        isVerified: false,
+          subject:
+            "Verification Code - Emora App",
 
-        verificationCode,
-      });
-
-      await newUser.save();
+          text:
+            `Hi ${cleanFullName}, your verification code is: ${verificationCode}`,
+        });
+      } catch (mailError) {
+        console.error(
+          "REGISTER PARENT EMAIL ERROR:",
+          mailError.message
+        );
+      }
 
       return res.status(201).json({
+        success: true,
+
         message:
           "User registered. Please verify your email.",
+
+        userId:
+          newUser._id,
       });
     } catch (error) {
       console.error(
@@ -1749,18 +1561,17 @@ router.post(
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Registration failed"
-        ),
+        success: false,
+        msg:
+          error.message ||
+          "Registration failed",
       });
     }
   }
 );
 
 /* =====================================================
-   VERIFY PARENT ACCOUNT OTP
-   POST /api/auth/verify
+   VERIFY PARENT OTP
 ===================================================== */
 
 router.post(
@@ -1772,15 +1583,18 @@ router.post(
           req.body.email
         );
 
-      const cleanCode = String(
-        req.body.code || ""
-      ).trim();
+      const cleanCode =
+        String(
+          req.body.code ||
+          ""
+        ).trim();
 
       if (
         !cleanEmail ||
         !cleanCode
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Email and verification code are required",
         });
@@ -1788,95 +1602,74 @@ router.post(
 
       const user =
         await User.findOne({
-          email: cleanEmail,
+          email:
+            cleanEmail,
         });
 
       if (!user) {
         return res.status(404).json({
-          msg: "User not found",
+          success: false,
+          msg:
+            "User not found",
         });
       }
 
-      if (user.role !== "parent") {
+      if (
+        user.role !==
+        "parent"
+      ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Email OTP verification is only available for parent accounts",
         });
       }
 
       if (
-        user.isVerified === true
+        user.isVerified
       ) {
         return res.status(200).json({
-          msg:
+          success: true,
+          message:
             "Account is already verified",
-
-          isVerified: true,
         });
       }
 
-      const savedCode = String(
-        user.verificationCode || ""
-      ).trim();
+      const savedCode =
+        String(
+          user.verificationCode ||
+          ""
+        ).trim();
 
       if (
-        savedCode !== cleanCode
+        savedCode !==
+        cleanCode
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Invalid verification code",
         });
       }
 
-      const updatedUser =
-        await User.findOneAndUpdate(
-          {
-            _id: user._id,
+      user.isVerified =
+        true;
 
-            verificationCode:
-              savedCode,
-          },
-          {
-            $set: {
-              isVerified: true,
-            },
+      user.verificationCode =
+        undefined;
 
-            $unset: {
-              verificationCode: 1,
-            },
-          },
-          {
-            new: true,
-            runValidators: true,
-          }
-        );
-
-      if (!updatedUser) {
-        return res.status(500).json({
-          msg:
-            "Account verification was not saved",
-        });
-      }
+      await user.save();
 
       return res.status(200).json({
-        msg:
+        success: true,
+
+        message:
           "Account verified successfully",
 
-        isVerified:
-          updatedUser.isVerified,
-
-        user: {
-          id: updatedUser._id,
-
-          fullName:
-            updatedUser.fullName,
-
-          email:
-            updatedUser.email,
-
-          role:
-            updatedUser.role,
-        },
+        user:
+          publicUserData(
+            user
+          ),
       });
     } catch (error) {
       console.error(
@@ -1885,10 +1678,10 @@ router.post(
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Verification failed"
-        ),
+        success: false,
+        msg:
+          error.message ||
+          "Verification failed",
       });
     }
   }
@@ -1896,7 +1689,6 @@ router.post(
 
 /* =====================================================
    LOGIN
-   POST /api/auth/login
 ===================================================== */
 
 router.post(
@@ -1916,6 +1708,7 @@ router.post(
         !password
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Email and password are required",
         });
@@ -1923,12 +1716,15 @@ router.post(
 
       const user =
         await User.findOne({
-          email: cleanEmail,
+          email:
+            cleanEmail,
         });
 
       if (!user) {
         return res.status(400).json({
-          msg: "Account not found",
+          success: false,
+          msg:
+            "Account not found",
         });
       }
 
@@ -1940,52 +1736,42 @@ router.post(
 
       if (!isMatch) {
         return res.status(400).json({
-          msg: "Wrong password",
+          success: false,
+          msg:
+            "Wrong password",
         });
       }
 
-      if (user.role === "doctor") {
+      if (
+        user.role ===
+        "doctor"
+      ) {
         if (
-          user.verificationStatus ===
-            "not_started" ||
-          user.verificationStatus ===
-            "draft"
+          [
+            "not_started",
+            "draft",
+          ].includes(
+            user.verificationStatus
+          )
         ) {
-          const verificationToken =
-            createDoctorVerificationToken(
-              user._id
-            );
-
           return res.status(202).json({
+            success: true,
+
             status:
               "VERIFICATION_INCOMPLETE",
 
             msg:
               "Please complete your professional verification.",
 
-            verificationToken,
+            verificationToken:
+              createDoctorVerificationToken(
+                user._id
+              ),
 
-            user: {
-              id: user._id,
-
-              fullName:
-                user.fullName,
-
-              email:
-                user.email,
-
-              role:
-                user.role,
-
-              specialization:
-                user.specialization,
-
-              verificationStatus:
-                user.verificationStatus,
-
-              verificationStep:
-                user.verificationStep,
-            },
+            user:
+              publicUserData(
+                user
+              ),
           });
         }
 
@@ -1994,30 +1780,18 @@ router.post(
           "pending"
         ) {
           return res.status(202).json({
+            success: true,
+
             status:
               "PENDING_VERIFICATION",
 
             msg:
               "Your application is under review. Please wait for approval.",
 
-            user: {
-              id: user._id,
-
-              fullName:
-                user.fullName,
-
-              email:
-                user.email,
-
-              role:
-                user.role,
-
-              verificationStatus:
-                user.verificationStatus,
-
-              verificationStep:
-                user.verificationStep,
-            },
+            user:
+              publicUserData(
+                user
+              ),
           });
         }
 
@@ -2025,41 +1799,24 @@ router.post(
           user.verificationStatus ===
           "rejected"
         ) {
-          const verificationToken =
-            createDoctorVerificationToken(
-              user._id
-            );
-
           return res.status(403).json({
+            success: false,
+
             status:
               "VERIFICATION_REJECTED",
 
             msg:
-              "Your application was rejected. You can review the result and resubmit.",
+              "Your application was rejected.",
 
-            verificationToken,
+            verificationToken:
+              createDoctorVerificationToken(
+                user._id
+              ),
 
-            user: {
-              id: user._id,
-
-              fullName:
-                user.fullName,
-
-              email:
-                user.email,
-
-              role:
-                user.role,
-
-              specialization:
-                user.specialization,
-
-              verificationStatus:
-                user.verificationStatus,
-
-              verificationStep:
-                user.verificationStep,
-            },
+            user:
+              publicUserData(
+                user
+              ),
           });
         }
 
@@ -2068,6 +1825,8 @@ router.post(
           "approved"
         ) {
           return res.status(403).json({
+            success: false,
+
             status:
               "VERIFICATION_REQUIRED",
 
@@ -2078,48 +1837,31 @@ router.post(
       }
 
       if (
-        user.role === "parent" &&
-        user.isVerified !== true
+        user.role ===
+          "parent" &&
+        !user.isVerified
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Please verify your email first",
         });
       }
 
       const token =
-        createLoginToken(user._id);
+        createLoginToken(
+          user._id
+        );
 
       return res.status(200).json({
+        success: true,
+
         token,
 
-        user: {
-          id: user._id,
-
-          name: user.fullName,
-
-          fullName:
-            user.fullName,
-
-          email: user.email,
-
-          role: user.role,
-
-          profilePic:
-            user.profilePic,
-
-          isVerified:
-            user.isVerified,
-
-          verificationStatus:
-            user.verificationStatus,
-
-          verificationStep:
-            user.verificationStep,
-
-          specialization:
-            user.specialization,
-        },
+        user:
+          publicUserData(
+            user
+          ),
       });
     } catch (error) {
       console.error(
@@ -2128,10 +1870,10 @@ router.post(
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Login failed"
-        ),
+        success: false,
+        msg:
+          error.message ||
+          "Login failed",
       });
     }
   }
@@ -2139,7 +1881,6 @@ router.post(
 
 /* =====================================================
    GET PROFILE
-   GET /api/auth/profile
 ===================================================== */
 
 router.get(
@@ -2157,7 +1898,8 @@ router.get(
       );
 
       return res.status(500).json({
-        error:
+        success: false,
+        msg:
           "Could not load profile",
       });
     }
@@ -2166,7 +1908,6 @@ router.get(
 
 /* =====================================================
    UPDATE PROFILE
-   PUT /api/auth/update-profile
 ===================================================== */
 
 router.put(
@@ -2186,7 +1927,8 @@ router.put(
       const updates = {};
 
       if (
-        fullName !== undefined
+        fullName !==
+        undefined
       ) {
         const cleanFullName =
           String(
@@ -2194,20 +1936,15 @@ router.put(
           ).trim();
 
         if (
-          cleanFullName.length < 3
+          cleanFullName.length <
+            3 ||
+          cleanFullName.length >
+            80
         ) {
           return res.status(400).json({
+            success: false,
             msg:
-              "Full name must be at least 3 characters",
-          });
-        }
-
-        if (
-          cleanFullName.length > 80
-        ) {
-          return res.status(400).json({
-            msg:
-              "Full name must not exceed 80 characters",
+              "Full name must be between 3 and 80 characters",
           });
         }
 
@@ -2215,9 +1952,14 @@ router.put(
           cleanFullName;
       }
 
-      if (email !== undefined) {
+      if (
+        email !==
+        undefined
+      ) {
         const cleanEmail =
-          normalizeEmail(email);
+          normalizeEmail(
+            email
+          );
 
         const emailRegex =
           /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -2228,6 +1970,7 @@ router.put(
           )
         ) {
           return res.status(400).json({
+            success: false,
             msg:
               "Please enter a valid email address",
           });
@@ -2235,17 +1978,20 @@ router.put(
 
         const existingUser =
           await User.findOne({
-            email: cleanEmail,
+            email:
+              cleanEmail,
 
             _id: {
-              $ne: req.user._id,
+              $ne:
+                req.user._id,
             },
           });
 
         if (existingUser) {
           return res.status(400).json({
+            success: false,
             msg:
-              "Email already in use by another account",
+              "Email already in use",
           });
         }
 
@@ -2253,80 +1999,52 @@ router.put(
           cleanEmail;
       }
 
-      if (phone !== undefined) {
-        const cleanPhone =
-          String(phone || "")
-            .replace(/[^\d+]/g, "")
-            .trim();
-
-        const phoneDigits =
-          cleanPhone.replace(
-            /\D/g,
-            ""
-          );
-
-        if (
-          cleanPhone &&
-          (phoneDigits.length < 10 ||
-            phoneDigits.length > 15)
-        ) {
-          return res.status(400).json({
-            msg:
-              "Please enter a valid phone number",
-          });
-        }
-
+      if (
+        phone !==
+        undefined
+      ) {
         updates.phone =
-          cleanPhone;
+          String(
+            phone || ""
+          ).trim();
       }
 
-      if (city !== undefined) {
-        const cleanCity =
-          String(city || "").trim();
-
-        if (
-          cleanCity.length > 60
-        ) {
-          return res.status(400).json({
-            msg:
-              "City must not exceed 60 characters",
-          });
-        }
-
+      if (
+        city !==
+        undefined
+      ) {
         updates.city =
-          cleanCity;
+          String(
+            city || ""
+          ).trim();
       }
 
-      if (bio !== undefined) {
-        const cleanBio =
-          String(bio || "").trim();
-
-        if (
-          cleanBio.length > 500
-        ) {
-          return res.status(400).json({
-            msg:
-              "Bio must not exceed 500 characters",
-          });
-        }
-
+      if (
+        bio !==
+        undefined
+      ) {
         updates.bio =
-          cleanBio;
+          String(
+            bio || ""
+          ).trim();
       }
 
       if (req.file) {
         updates.profilePic =
           req.file.path ||
-          req.file.secure_url ||
+          req.file
+            .secure_url ||
           req.file.url ||
           "";
       }
 
       if (
-        Object.keys(updates).length ===
-        0
+        Object.keys(
+          updates
+        ).length === 0
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "No profile changes were provided",
         });
@@ -2336,7 +2054,8 @@ router.put(
         await User.findByIdAndUpdate(
           req.user._id,
           {
-            $set: updates,
+            $set:
+              updates,
           },
           {
             new: true,
@@ -2348,17 +2067,20 @@ router.put(
 
       if (!updatedUser) {
         return res.status(404).json({
-          msg: "User not found",
+          success: false,
+          msg:
+            "User not found",
         });
       }
 
       return res.status(200).json({
         success: true,
 
-        msg:
+        message:
           "Profile updated successfully",
 
-        user: updatedUser,
+        user:
+          updatedUser,
       });
     } catch (error) {
       console.error(
@@ -2366,24 +2088,20 @@ router.put(
         error
       );
 
-      if (
-        error?.code === 11000
-      ) {
-        return res.status(400).json({
-          msg:
-            "Email already in use by another account",
-        });
-      }
-
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Profile update failed"
-        ),
+        success: false,
+        msg:
+          error.message ||
+          "Profile update failed",
       });
     }
   }
 );
+
+/* =====================================================
+   RESEND OTP
+===================================================== */
+
 router.post(
   "/resend-code",
   async (req, res) => {
@@ -2395,6 +2113,7 @@ router.post(
 
       if (!cleanEmail) {
         return res.status(400).json({
+          success: false,
           msg:
             "Please provide an email",
         });
@@ -2402,65 +2121,68 @@ router.post(
 
       const user =
         await User.findOne({
-          email: cleanEmail,
+          email:
+            cleanEmail,
         });
 
       if (!user) {
         return res.status(404).json({
+          success: false,
           msg:
             "User not found with this email",
         });
       }
 
-      if (user.role !== "parent") {
+      if (
+        user.role !==
+        "parent"
+      ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Email OTP verification is only available for parent accounts",
         });
       }
 
       if (
-        user.isVerified === true
+        user.isVerified
       ) {
         return res.status(400).json({
+          success: false,
           msg:
-            "Your account is already verified. Please login.",
+            "Your account is already verified",
         });
       }
 
       const verificationCode =
         Math.floor(
           1000 +
-            Math.random() * 9000
+          Math.random() *
+            9000
         ).toString();
 
-      await User.findByIdAndUpdate(
-        user._id,
-        {
-          $set: {
-            verificationCode,
+      user.verificationCode =
+        verificationCode;
 
-            isVerified: false,
-          },
-        }
-      );
+      await user.save();
 
       await transporter.sendMail({
         from:
           `"Emora App" <${EMAIL_USER}>`,
 
-        to: user.email,
+        to:
+          user.email,
 
         subject:
           "New Verification Code - Emora App",
 
         text:
-          `Your new verification code is: ` +
-          verificationCode,
+          `Your new verification code is: ${verificationCode}`,
       });
 
       return res.status(200).json({
-        msg:
+        success: true,
+        message:
           "A new code has been sent to your email",
       });
     } catch (error) {
@@ -2470,10 +2192,10 @@ router.post(
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Could not resend verification code"
-        ),
+        success: false,
+        msg:
+          error.message ||
+          "Could not resend verification code",
       });
     }
   }
@@ -2481,7 +2203,6 @@ router.post(
 
 /* =====================================================
    FORGOT PASSWORD
-   POST /api/auth/forgot-password
 ===================================================== */
 
 router.post(
@@ -2495,6 +2216,7 @@ router.post(
 
       if (!cleanEmail) {
         return res.status(400).json({
+          success: false,
           msg:
             "Please provide an email",
         });
@@ -2502,19 +2224,23 @@ router.post(
 
       const user =
         await User.findOne({
-          email: cleanEmail,
+          email:
+            cleanEmail,
         });
 
       if (!user) {
         return res.status(404).json({
-          msg: "Email not found",
+          success: false,
+          msg:
+            "Email not found",
         });
       }
 
       const otp =
         Math.floor(
           1000 +
-            Math.random() * 9000
+          Math.random() *
+            9000
         ).toString();
 
       user.resetPasswordToken =
@@ -2523,7 +2249,7 @@ router.post(
       user.resetPasswordExpires =
         new Date(
           Date.now() +
-            10 * 60 * 1000
+          10 * 60 * 1000
         );
 
       await user.save();
@@ -2532,18 +2258,19 @@ router.post(
         from:
           `"Emora App" <${EMAIL_USER}>`,
 
-        to: user.email,
+        to:
+          user.email,
 
         subject:
           "Password Reset Code - Emora App",
 
         text:
-          `Your password reset code is: ${otp}. ` +
-          "It expires in 10 minutes.",
+          `Your password reset code is: ${otp}. It expires in 10 minutes.`,
       });
 
       return res.status(200).json({
-        msg:
+        success: true,
+        message:
           "OTP sent to your email",
       });
     } catch (error) {
@@ -2553,18 +2280,17 @@ router.post(
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Could not send password reset code"
-        ),
+        success: false,
+        msg:
+          error.message ||
+          "Could not send password reset code",
       });
     }
   }
 );
 
 /* =====================================================
-   VERIFY RESET PASSWORD OTP
-   POST /api/auth/verify-otp
+   VERIFY RESET OTP
 ===================================================== */
 
 router.post(
@@ -2576,15 +2302,18 @@ router.post(
           req.body.email
         );
 
-      const otp = String(
-        req.body.otp || ""
-      ).trim();
+      const otp =
+        String(
+          req.body.otp ||
+          ""
+        ).trim();
 
       if (
         !cleanEmail ||
         !otp
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Email and OTP are required",
         });
@@ -2592,18 +2321,21 @@ router.post(
 
       const user =
         await User.findOne({
-          email: cleanEmail,
+          email:
+            cleanEmail,
 
           resetPasswordToken:
             otp,
 
           resetPasswordExpires: {
-            $gt: new Date(),
+            $gt:
+              new Date(),
           },
         });
 
       if (!user) {
         return res.status(400).json({
+          success: false,
           msg:
             "Invalid or expired OTP",
         });
@@ -2623,7 +2355,9 @@ router.post(
       await user.save();
 
       return res.status(200).json({
-        msg:
+        success: true,
+
+        message:
           "OTP verified successfully",
 
         resetToken,
@@ -2635,10 +2369,10 @@ router.post(
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "OTP verification failed"
-        ),
+        success: false,
+        msg:
+          error.message ||
+          "OTP verification failed",
       });
     }
   }
@@ -2646,7 +2380,6 @@ router.post(
 
 /* =====================================================
    RESET PASSWORD
-   POST /api/auth/reset-password
 ===================================================== */
 
 router.post(
@@ -2661,7 +2394,9 @@ router.post(
       } = req.body;
 
       const cleanEmail =
-        normalizeEmail(email);
+        normalizeEmail(
+          email
+        );
 
       if (
         !cleanEmail ||
@@ -2669,68 +2404,21 @@ router.post(
         !resetToken
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Email, new password and reset token are required",
         });
       }
 
-<<<<<<< Updated upstream
-    if (user.role === 'parent'&& !user.isVerified) {
-      return res.status(400).json({ msg: 'Please verify your email first' });
-    }
-    const token = jwt.sign(
-    { id: user._id },
-    process.env.JWT_SECRET,
-    { expiresIn: '1d' }
-);
-
-    res.json({
-      token,
-      user: {
-        name: user.fullName,
-        email: user.email,
-        role: user.role,
-        verificationStatus: user.verificationStatus // إضافية: عشان الفرونت إند يعرف حالة الدكتور
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Login failed' });
-  }
-
-});
-
-router.get('/profile', checkToken, async (req, res) => {
-  try {
-    res.json(req.user);
-  } catch (error) {
-    res.status(500).send('Server Error');
-  }
-
-});
-
-router.put('/update-profile', checkToken, uploadProfile.single('profilePic'), async (req, res) => {
-  try {
-    const { fullName, email } = req.body;
-    const updates = {};
-
-    if (fullName) updates.fullName = fullName;
-    if (req.file) updates.profilePic = req.file.path;
-
-    if (email) {
-      const cleanEmail = email.trim();
-      const existingUser = await User.findOne({ email: cleanEmail });
-
-      if (existingUser && existingUser._id.toString() !== req.user._id.toString()) {
-        return res.status(400).json({ msg: 'Email already in use by another account' });
-=======
       if (
-        newPassword.length < 8
+        newPassword.length <
+        8
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Password must be at least 8 characters",
         });
->>>>>>> Stashed changes
       }
 
       if (
@@ -2740,6 +2428,7 @@ router.put('/update-profile', checkToken, uploadProfile.single('profilePic'), as
           confirmPassword
       ) {
         return res.status(400).json({
+          success: false,
           msg:
             "Passwords do not match",
         });
@@ -2748,12 +2437,15 @@ router.put('/update-profile', checkToken, uploadProfile.single('profilePic'), as
       let decoded;
 
       try {
-        decoded = jwt.verify(
-          resetToken,
-          process.env.JWT_SECRET
-        );
-      } catch {
+        decoded =
+          jwt.verify(
+            resetToken,
+            process.env
+              .JWT_SECRET
+          );
+      } catch (error) {
         return res.status(401).json({
+          success: false,
           msg:
             "Invalid or expired password reset session",
         });
@@ -2764,6 +2456,7 @@ router.put('/update-profile', checkToken, uploadProfile.single('profilePic'), as
         "reset_password"
       ) {
         return res.status(401).json({
+          success: false,
           msg:
             "Invalid password reset token",
         });
@@ -2771,24 +2464,25 @@ router.put('/update-profile', checkToken, uploadProfile.single('profilePic'), as
 
       const user =
         await User.findOne({
-          _id: decoded.id,
+          _id:
+            decoded.id,
 
-          email: cleanEmail,
+          email:
+            cleanEmail,
         });
 
       if (!user) {
         return res.status(404).json({
-          msg: "User not found",
+          success: false,
+          msg:
+            "User not found",
         });
       }
-
-      const salt =
-        await bcrypt.genSalt(10);
 
       user.password =
         await bcrypt.hash(
           newPassword,
-          salt
+          10
         );
 
       user.resetPasswordToken =
@@ -2800,7 +2494,8 @@ router.put('/update-profile', checkToken, uploadProfile.single('profilePic'), as
       await user.save();
 
       return res.status(200).json({
-        msg:
+        success: true,
+        message:
           "Password reset successfully",
       });
     } catch (error) {
@@ -2810,10 +2505,10 @@ router.put('/update-profile', checkToken, uploadProfile.single('profilePic'), as
       );
 
       return res.status(500).json({
-        error: getErrorMessage(
-          error,
-          "Password reset failed"
-        ),
+        success: false,
+        msg:
+          error.message ||
+          "Password reset failed",
       });
     }
   }

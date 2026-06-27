@@ -1,42 +1,40 @@
-
 const express = require("express");
+const axios = require("axios");
+const FormData = require("form-data");
+const fs = require("fs");
+const multer = require("multer");
+
 const router = express.Router();
-<<<<<<< Updated upstream
-const Child = require('../models/Child');
-const axios = require('axios');
-
-const Notification = require('../models/NotificationP');
-
-const FormData = require('form-data');
-const fs = require('fs');
-const Entry = require('../models/entry');
-// في أعلى ملف الـ router الخاص بالأهل
-const { updateCaseWithAIResults } = require('../services/caseService');
-const { sendNotification: sendDoctorNotification } = require('../services/notificationService');
-const { checkToken } = require('../middleware/authMiddleware');
-
-const multer = require('multer');
-const upload = multer({ dest: 'uploads/' }).fields([
-    { name: 'file', maxCount: 1 }, 
-    { name: 'audio', maxCount: 1 }
-]);
-
-
-
-router.get('/all', checkToken, async (req, res) => {
-    try {
-        const children = await Child.find({ parentId: req.user._id });
-        res.status(200).json(children);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch children", message: err.message });
-    }
-=======
 
 const Child = require("../models/Child");
 const Case = require("../models/Case");
+const Entry = require("../models/entry");
+const Notification = require("../models/NotificationP");
+
+const {
+  updateCaseWithAIResults,
+} = require("../services/caseService");
+
+const {
+  sendNotification: sendDoctorNotification,
+} = require("../services/notificationService");
+
 const {
   checkToken,
 } = require("../middleware/authMiddleware");
+
+const upload = multer({
+  dest: "uploads/",
+}).fields([
+  {
+    name: "file",
+    maxCount: 1,
+  },
+  {
+    name: "audio",
+    maxCount: 1,
+  },
+]);
 
 /* =========================
    Get All Parent Children
@@ -58,7 +56,6 @@ router.get("/all", checkToken, async (req, res) => {
       message: err.message,
     });
   }
->>>>>>> Stashed changes
 });
 
 /* =========================
@@ -214,7 +211,8 @@ router.get(
       ]
         .sort((firstEntry, secondEntry) => {
           const firstDate =
-            new Date(firstEntry.date).getTime() || 0;
+            new Date(firstEntry.date).getTime() ||
+            0;
 
           const secondDate =
             new Date(secondEntry.date).getTime() ||
@@ -330,6 +328,7 @@ router.get(
       return res.status(500).json({
         error:
           "Failed to fetch child overview",
+
         message:
           err?.message ||
           "Unexpected error while loading child overview",
@@ -419,105 +418,110 @@ router.get(
             ? caseData.textAnalyses
             : [];
 
-        textAnalyses.forEach((entry, index) => {
-          const entryId =
-            entry?._id?.toString?.() ||
-            `text-${caseData._id}-${index}`;
+        textAnalyses.forEach(
+          (entry, index) => {
+            const entryId =
+              entry?._id?.toString?.() ||
+              `text-${caseData._id}-${index}`;
 
-          entries.push({
-            id: entryId,
+            entries.push({
+              id: entryId,
 
-            caseId:
-              caseData._id?.toString?.() ||
-              "",
+              caseId:
+                caseData._id?.toString?.() ||
+                "",
 
-            date:
-              entry?.createdAt ||
-              fallbackDate,
+              date:
+                entry?.createdAt ||
+                fallbackDate,
 
-            type: "Text Entry",
+              type: "Text Entry",
 
-            emotion:
-              typeof entry?.emotion ===
-                "string" &&
-              entry.emotion.trim()
-                ? entry.emotion
-                : caseEmotion,
+              emotion:
+                typeof entry?.emotion ===
+                  "string" &&
+                entry.emotion.trim()
+                  ? entry.emotion
+                  : caseEmotion,
 
-            description:
-              (typeof entry?.analysisResult ===
-                "string" &&
-              entry.analysisResult.trim()
-                ? entry.analysisResult
-                : "") ||
-              (typeof entry?.content === "string" &&
-              entry.content.trim()
-                ? entry.content
-                : "") ||
-              "Text analysis entry",
+              description:
+                (typeof entry?.analysisResult ===
+                  "string" &&
+                entry.analysisResult.trim()
+                  ? entry.analysisResult
+                  : "") ||
+                (typeof entry?.content ===
+                  "string" &&
+                entry.content.trim()
+                  ? entry.content
+                  : "") ||
+                "Text analysis entry",
 
-            status: caseStatus,
+              status: caseStatus,
 
-            confidence:
-              Number(entry?.confidence) ||
-              caseConfidence,
+              confidence:
+                Number(entry?.confidence) ||
+                caseConfidence,
 
-            doctorResponseExists,
-          });
-        });
+              doctorResponseExists,
+            });
+          }
+        );
 
         const drawings =
           Array.isArray(caseData.drawings)
             ? caseData.drawings
             : [];
 
-        drawings.forEach((entry, index) => {
-          const entryId =
-            entry?._id?.toString?.() ||
-            `drawing-${caseData._id}-${index}`;
+        drawings.forEach(
+          (entry, index) => {
+            const entryId =
+              entry?._id?.toString?.() ||
+              `drawing-${caseData._id}-${index}`;
 
-          entries.push({
-            id: entryId,
+            entries.push({
+              id: entryId,
 
-            caseId:
-              caseData._id?.toString?.() ||
-              "",
+              caseId:
+                caseData._id?.toString?.() ||
+                "",
 
-            date:
-              entry?.createdAt ||
-              fallbackDate,
+              date:
+                entry?.createdAt ||
+                fallbackDate,
 
-            type: "Drawing Entry",
+              type: "Drawing Entry",
 
-            emotion:
-              typeof entry?.emotion ===
-                "string" &&
-              entry.emotion.trim()
-                ? entry.emotion
-                : caseEmotion,
+              emotion:
+                typeof entry?.emotion ===
+                  "string" &&
+                entry.emotion.trim()
+                  ? entry.emotion
+                  : caseEmotion,
 
-            description:
-              typeof entry?.analysisResult ===
-                "string" &&
-              entry.analysisResult.trim()
-                ? entry.analysisResult
-                : "Drawing analysis entry",
+              description:
+                typeof entry?.analysisResult ===
+                  "string" &&
+                entry.analysisResult.trim()
+                  ? entry.analysisResult
+                  : "Drawing analysis entry",
 
-            status: caseStatus,
+              status: caseStatus,
 
-            confidence:
-              Number(entry?.confidence) ||
-              caseConfidence,
+              confidence:
+                Number(entry?.confidence) ||
+                caseConfidence,
 
-            doctorResponseExists,
+              doctorResponseExists,
 
-            imageUrl:
-              typeof entry?.imageUrl ===
-              "string"
-                ? entry.imageUrl
-                : "",
-          });
-        });
+              imageUrl:
+                typeof entry?.imageUrl ===
+                "string"
+                  ? entry.imageUrl
+                  : "",
+            });
+          }
+        );
 
         const voiceAnalyses =
           Array.isArray(caseData.voiceAnalyses)
@@ -644,182 +648,507 @@ router.get(
 
         message:
           err?.message ||
-          "Unexpected error while loading entries",
+          "Unexpected error while loading child entries",
       });
     }
-<<<<<<< Updated upstream
-});
-router.post('/add-entry', checkToken, upload, async (req, res) => {
-    try {
-        const { childId, text } = req.body;
-        
-        const child = await Child.findById(childId);
-        if (!child) return res.status(404).json({ error: "Child not found" });
-
-        // 1. حفظ المدخلات في قاعدة البيانات (كما فعلتِ)
-        const newEntry = await Entry.create({
-            childId,
-            parentId: req.user.id,
-            text,
-            audioUrl: req.files.audio ? req.files.audio[0].path : null,
-            imageUrl: req.files.file ? req.files.file[0].path : null
-        });
-
-        // 2. تجهيز البيانات للـ AI
-        const formData = new FormData();
-        formData.append('child_id', childId);
-        formData.append('text', text || "");
-        if (req.files.file) formData.append('file', fs.createReadStream(req.files.file[0].path));
-        if (req.files.audio) formData.append('audio', fs.createReadStream(req.files.audio[0].path));
-
-        // 3. إرسال الطلب للـ AI Engine
-        const aiResponse = await axios.post('http://127.0.0.1:8000/predict', formData, {
-            headers: formData.getHeaders(),
-            timeout: 30000
-        });
-
-        // 4. هنا نقوم بتحديث الـ Case بناءً على النتيجة (بنفس منطق الـ analyzeController)
-        // يمكنك استدعاء دالة معالجة النتائج التي كتبناها سابقاً لتحديث الـ Case
-       
-        const updatedCase = await updateCaseWithAIResults(childId, child.doctorId, aiResponse.data);
-        // 5. إبلاغ الطبيب بوجود مدخل جديد (New Parent Follow-up)
-        // نستدعي دالة الإشعارات التي كتبناها مسبقاً
-        await sendDoctorNotification({
-    doctorId: child.doctorId, 
-    childId: childId,
-            title: "New Parent Follow-up",
-            message: `Parent added new information about ${childId}'s recent emotional behavior.`,
-            type: 'follow_up'
-        });
-
-        res.json({ success: true, entry: newEntry, aiResult: aiResponse.data, case:updatedCase });
-    } catch (err) {
-        console.error("Error in add-entry integration:", err);
-        res.status(500).json({ error: 'Failed to process entry and analyze with AI' });
-    }
-});
-router.get('/progress-stats/:childId', checkToken, async (req, res) => {
-    try {
-        const caseData = await Case.findOne({ childId: req.params.childId });
-        
-        if (!caseData) {
-            return res.json({ entries: 0, reviewed: 0, insights: 0 });
-        }
-
-        // حساب القيم بناءً على البيانات الموجودة في الـ Case
-        const stats = {
-            entries: caseData.entriesCount || 0, // إجمالي المدخلات
-            
-            // عدد المدخلات التي تمت مراجعتها من الطبيب 
-            // (نبحث في الـ analysisTimeline عن الحالات التي قيمتها الطبيب)
-            reviewed: caseData.analysisTimeline.filter(item => item.diagnosis !== "تحت المتابعة").length,
-            
-            // عدد الرؤى (يمكن اعتبارها عدد التحليلات النصية أو مجموع التقارير)
-            insights: caseData.textAnalyses ? caseData.textAnalyses.length : 0
-        };
-
-        res.json(stats);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch stats" });
-    }
-});
-router.get('/child-progress/:childId', checkToken, async (req, res) => {
-    try {
-        const caseData = await Case.findOne({ childId: req.params.childId })
-            .populate('doctorRecommendations'); // لجلب توصيات الطبيب
-
-        if (!caseData) return res.status(404).json({ msg: "No progress data yet" });
-
-        res.json({
-            summary: caseData.aiSummary, // الـ Long-term Summary
-            stats: {
-                entries: caseData.entriesCount,
-                reviewed: caseData.analysisTimeline.filter(a => a.status === 'reviewed').length,
-                insights: caseData.textAnalyses.length
-            },
-            trends: caseData.emotionalTrend, // لعمل الـ Chart
-            patterns: caseData.recurringPatterns, // "School anxiety", "Sleep routine"
-            latestDoctorInsight: caseData.doctorRecommendations[0] // أحدث توصية من الدكتور
-        });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch progress" });
-    }
-});
-router.get('/entry-timeline/:childId', checkToken, async (req, res) => {
-    try {
-        const entries = await Entry.find({ childId: req.params.childId })
-            .sort({ createdAt: -1 }); // الترتيب من الأحدث للأقدم
-            
-        res.json(entries);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch timeline" });
-    }
-});
-router.get('/recommendations/:childId', checkToken, async (req, res) => {
-    try {
-        const caseData = await Case.findOne({ childId: req.params.childId });
-        if (!caseData) return res.status(404).json({ error: "No data found" });
-        
-        res.json(caseData.doctorRecommendations);
-    } catch (err) {
-        res.status(500).json({ error: "Server error" });
-    }
-});
-
-router.get('/my-notifications', checkToken, async (req, res) => {
-    try {
-        const notifications = await Notification.find({ userId: req.user._id })
-            .sort({ createdAt: -1 }); // الترتيب من الأحدث للأقدم
-        res.status(200).json(notifications);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch notifications" });
-    }
-});
-router.patch('/read/:notificationId', checkToken, async (req, res) => {
-    try {
-        await Notification.findByIdAndUpdate(req.params.notificationId, { isRead: true });
-        res.status(200).json({ msg: "Notification marked as read" });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to update notification" });
-    }
-});
-
-module.exports = router;
-=======
   }
 );
 
 /* =========================
-   Get One Child
-   GET /api/children/:childId
+   Add Entry And Analyze With AI
+   POST /api/children/add-entry
 ========================= */
 
-router.get(
-  "/:childId",
+router.post(
+  "/add-entry",
   checkToken,
+  upload,
   async (req, res) => {
     try {
-      const child = await Child.findOne({
-        _id: req.params.childId,
-        parentId: req.user._id,
-      });
+      const {
+        childId,
+        text,
+      } = req.body;
+
+      const child =
+        await Child.findById(childId);
 
       if (!child) {
         return res.status(404).json({
-          msg: "Child not found",
+          error: "Child not found",
         });
       }
 
-      return res.status(200).json(child);
+      const audioFile =
+        req.files?.audio?.[0];
+
+      const imageFile =
+        req.files?.file?.[0];
+
+      const newEntry =
+        await Entry.create({
+          childId,
+
+          parentId:
+            req.user._id,
+
+          text,
+
+          audioUrl:
+            audioFile
+              ? audioFile.path
+              : null,
+
+          imageUrl:
+            imageFile
+              ? imageFile.path
+              : null,
+        });
+
+      const formData =
+        new FormData();
+
+      formData.append(
+        "child_id",
+        childId
+      );
+
+      formData.append(
+        "text",
+        text || ""
+      );
+
+      if (imageFile) {
+        formData.append(
+          "file",
+          fs.createReadStream(
+            imageFile.path
+          )
+        );
+      }
+
+      if (audioFile) {
+        formData.append(
+          "audio",
+          fs.createReadStream(
+            audioFile.path
+          )
+        );
+      }
+
+      const aiResponse =
+        await axios.post(
+          "http://127.0.0.1:8000/predict",
+
+          formData,
+
+          {
+            headers:
+              formData.getHeaders(),
+
+            timeout: 30000,
+          }
+        );
+
+      const updatedCase =
+        await updateCaseWithAIResults(
+          childId,
+
+          child.doctorId,
+
+          aiResponse.data
+        );
+
+      await sendDoctorNotification({
+        doctorId:
+          child.doctorId,
+
+        childId,
+
+        title:
+          "New Parent Follow-up",
+
+        message:
+          `Parent added new information about ${childId}'s recent emotional behavior.`,
+
+        type:
+          "follow_up",
+      });
+
+      return res.status(200).json({
+        success: true,
+
+        entry:
+          newEntry,
+
+        aiResult:
+          aiResponse.data,
+
+        case:
+          updatedCase,
+      });
     } catch (err) {
       console.error(
-        "GET CHILD DETAILS ERROR:",
+        "Error in add-entry integration:",
         err
       );
 
       return res.status(500).json({
         error:
-          "Failed to fetch child details",
+          "Failed to process entry and analyze with AI",
+
+        message:
+          err?.message,
+      });
+    }
+  }
+);
+
+/* =========================
+   Get Progress Stats
+   GET /api/children/progress-stats/:childId
+========================= */
+
+router.get(
+  "/progress-stats/:childId",
+  checkToken,
+  async (req, res) => {
+    try {
+      const caseData =
+        await Case.findOne({
+          childId:
+            req.params.childId,
+        });
+
+      if (!caseData) {
+        return res.status(200).json({
+          entries: 0,
+          reviewed: 0,
+          insights: 0,
+        });
+      }
+
+      const analysisTimeline =
+        Array.isArray(
+          caseData.analysisTimeline
+        )
+          ? caseData.analysisTimeline
+          : [];
+
+      const textAnalyses =
+        Array.isArray(
+          caseData.textAnalyses
+        )
+          ? caseData.textAnalyses
+          : [];
+
+      const stats = {
+        entries:
+          caseData.entriesCount || 0,
+
+        reviewed:
+          analysisTimeline.filter(
+            (item) =>
+              item.diagnosis !==
+              "تحت المتابعة"
+          ).length,
+
+        insights:
+          textAnalyses.length,
+      };
+
+      return res
+        .status(200)
+        .json(stats);
+    } catch (err) {
+      console.error(
+        "GET PROGRESS STATS ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        error:
+          "Failed to fetch stats",
+
+        message:
+          err?.message,
+      });
+    }
+  }
+);
+
+/* =========================
+   Get Child Progress
+   GET /api/children/child-progress/:childId
+========================= */
+
+router.get(
+  "/child-progress/:childId",
+  checkToken,
+  async (req, res) => {
+    try {
+      const caseData =
+        await Case.findOne({
+          childId:
+            req.params.childId,
+        }).populate(
+          "doctorRecommendations"
+        );
+
+      if (!caseData) {
+        return res.status(404).json({
+          msg:
+            "No progress data yet",
+        });
+      }
+
+      const analysisTimeline =
+        Array.isArray(
+          caseData.analysisTimeline
+        )
+          ? caseData.analysisTimeline
+          : [];
+
+      const textAnalyses =
+        Array.isArray(
+          caseData.textAnalyses
+        )
+          ? caseData.textAnalyses
+          : [];
+
+      const doctorRecommendations =
+        Array.isArray(
+          caseData.doctorRecommendations
+        )
+          ? caseData.doctorRecommendations
+          : [];
+
+      return res.status(200).json({
+        summary:
+          caseData.aiSummary,
+
+        stats: {
+          entries:
+            caseData.entriesCount ||
+            0,
+
+          reviewed:
+            analysisTimeline.filter(
+              (item) =>
+                item.status ===
+                "reviewed"
+            ).length,
+
+          insights:
+            textAnalyses.length,
+        },
+
+        trends:
+          Array.isArray(
+            caseData.emotionalTrend
+          )
+            ? caseData.emotionalTrend
+            : [],
+
+        patterns:
+          Array.isArray(
+            caseData.recurringPatterns
+          )
+            ? caseData.recurringPatterns
+            : [],
+
+        latestDoctorInsight:
+          doctorRecommendations[0] ||
+          null,
+      });
+    } catch (err) {
+      console.error(
+        "GET CHILD PROGRESS ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        error:
+          "Failed to fetch progress",
+
+        message:
+          err?.message,
+      });
+    }
+  }
+);
+
+/* =========================
+   Get Entry Timeline
+   GET /api/children/entry-timeline/:childId
+========================= */
+
+router.get(
+  "/entry-timeline/:childId",
+  checkToken,
+  async (req, res) => {
+    try {
+      const entries =
+        await Entry.find({
+          childId:
+            req.params.childId,
+        }).sort({
+          createdAt: -1,
+        });
+
+      return res
+        .status(200)
+        .json(entries);
+    } catch (err) {
+      console.error(
+        "GET ENTRY TIMELINE ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        error:
+          "Failed to fetch timeline",
+
+        message:
+          err?.message,
+      });
+    }
+  }
+);
+
+/* =========================
+   Get Doctor Recommendations
+   GET /api/children/recommendations/:childId
+========================= */
+
+router.get(
+  "/recommendations/:childId",
+  checkToken,
+  async (req, res) => {
+    try {
+      const caseData =
+        await Case.findOne({
+          childId:
+            req.params.childId,
+        });
+
+      if (!caseData) {
+        return res.status(404).json({
+          error:
+            "No data found",
+        });
+      }
+
+      return res.status(200).json(
+        Array.isArray(
+          caseData.doctorRecommendations
+        )
+          ? caseData.doctorRecommendations
+          : []
+      );
+    } catch (err) {
+      console.error(
+        "GET RECOMMENDATIONS ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        error:
+          "Server error",
+
+        message:
+          err?.message,
+      });
+    }
+  }
+);
+
+/* =========================
+   Get Parent Notifications
+   GET /api/children/my-notifications
+========================= */
+
+router.get(
+  "/my-notifications",
+  checkToken,
+  async (req, res) => {
+    try {
+      const notifications =
+        await Notification.find({
+          userId:
+            req.user._id,
+        }).sort({
+          createdAt: -1,
+        });
+
+      return res
+        .status(200)
+        .json(notifications);
+    } catch (err) {
+      console.error(
+        "GET NOTIFICATIONS ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        error:
+          "Failed to fetch notifications",
+
+        message:
+          err?.message,
+      });
+    }
+  }
+);
+
+/* =========================
+   Mark Notification As Read
+   PATCH /api/children/read/:notificationId
+========================= */
+
+router.patch(
+  "/read/:notificationId",
+  checkToken,
+  async (req, res) => {
+    try {
+      const notification =
+        await Notification.findByIdAndUpdate(
+          req.params.notificationId,
+
+          {
+            isRead: true,
+          },
+
+          {
+            new: true,
+          }
+        );
+
+      if (!notification) {
+        return res.status(404).json({
+          error:
+            "Notification not found",
+        });
+      }
+
+      return res.status(200).json({
+        msg:
+          "Notification marked as read",
+
+        notification,
+      });
+    } catch (err) {
+      console.error(
+        "READ NOTIFICATION ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        error:
+          "Failed to update notification",
+
+        message:
+          err?.message,
       });
     }
   }
@@ -842,35 +1171,43 @@ router.post(
         notes,
       } = req.body;
 
-      const newChild = new Child({
-        name:
-          typeof name === "string"
-            ? name.trim()
-            : name,
+      const newChild =
+        new Child({
+          name:
+            typeof name ===
+            "string"
+              ? name.trim()
+              : name,
 
-        age: Number(age),
+          age:
+            Number(age),
 
-        gender:
-          typeof gender === "string"
-            ? gender
-                .toLowerCase()
-                .trim()
-            : gender,
+          gender:
+            typeof gender ===
+            "string"
+              ? gender
+                  .toLowerCase()
+                  .trim()
+              : gender,
 
-        notes:
-          typeof notes === "string"
-            ? notes.trim()
-            : "",
+          notes:
+            typeof notes ===
+            "string"
+              ? notes.trim()
+              : "",
 
-        parentId: req.user._id,
-      });
+          parentId:
+            req.user._id,
+        });
 
       await newChild.save();
 
       return res.status(201).json({
         message:
           "Child added successfully",
-        child: newChild,
+
+        child:
+          newChild,
       });
     } catch (err) {
       console.error(
@@ -879,7 +1216,54 @@ router.post(
       );
 
       return res.status(500).json({
-        error: err.message,
+        error:
+          err.message,
+      });
+    }
+  }
+);
+
+/* =========================
+   Get One Child
+   GET /api/children/:childId
+========================= */
+
+router.get(
+  "/:childId",
+  checkToken,
+  async (req, res) => {
+    try {
+      const child =
+        await Child.findOne({
+          _id:
+            req.params.childId,
+
+          parentId:
+            req.user._id,
+        });
+
+      if (!child) {
+        return res.status(404).json({
+          msg:
+            "Child not found",
+        });
+      }
+
+      return res
+        .status(200)
+        .json(child);
+    } catch (err) {
+      console.error(
+        "GET CHILD DETAILS ERROR:",
+        err
+      );
+
+      return res.status(500).json({
+        error:
+          "Failed to fetch child details",
+
+        message:
+          err?.message,
       });
     }
   }
@@ -897,13 +1281,17 @@ router.delete(
     try {
       const child =
         await Child.findOneAndDelete({
-          _id: req.params.childId,
-          parentId: req.user._id,
+          _id:
+            req.params.childId,
+
+          parentId:
+            req.user._id,
         });
 
       if (!child) {
         return res.status(404).json({
-          msg: "Child not found",
+          msg:
+            "Child not found",
         });
       }
 
@@ -918,7 +1306,11 @@ router.delete(
       );
 
       return res.status(500).json({
-        error: "Failed to delete child",
+        error:
+          "Failed to delete child",
+
+        message:
+          err?.message,
       });
     }
   }
@@ -944,31 +1336,40 @@ router.put(
       const updatedChild =
         await Child.findOneAndUpdate(
           {
-            _id: req.params.childId,
-            parentId: req.user._id,
+            _id:
+              req.params.childId,
+
+            parentId:
+              req.user._id,
           },
+
           {
             $set: {
               name:
-                typeof name === "string"
+                typeof name ===
+                "string"
                   ? name.trim()
                   : name,
 
-              age: Number(age),
+              age:
+                Number(age),
 
               gender:
-                typeof gender === "string"
+                typeof gender ===
+                "string"
                   ? gender
                       .toLowerCase()
                       .trim()
                   : gender,
 
               notes:
-                typeof notes === "string"
+                typeof notes ===
+                "string"
                   ? notes.trim()
                   : "",
             },
           },
+
           {
             new: true,
             runValidators: true,
@@ -977,14 +1378,17 @@ router.put(
 
       if (!updatedChild) {
         return res.status(404).json({
-          msg: "Child not found",
+          msg:
+            "Child not found",
         });
       }
 
       return res.status(200).json({
         msg:
           "Child updated successfully",
-        child: updatedChild,
+
+        child:
+          updatedChild,
       });
     } catch (err) {
       console.error(
@@ -1005,5 +1409,3 @@ router.put(
 );
 
 module.exports = router;
-
->>>>>>> Stashed changes

@@ -6,4 +6,5 @@ const entrySchema = new mongoose.Schema({
     audioUrl: String,
     imageUrl: String,
     createdAt: { type: Date, default: Date.now }
+    
 });

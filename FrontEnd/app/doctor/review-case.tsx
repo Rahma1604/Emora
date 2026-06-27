@@ -1,9 +1,17 @@
-import React, { useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -12,6 +20,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,482 +31,764 @@ import {
   type Href,
 } from "expo-router";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
+
+import API from "../api";
+
 const girlPhoto = require("../../assets/images/images/girl.png");
 const boyPhoto = require("../../assets/images/images/boy.png");
-const confidenceImage = require("../../assets/images/images/75%.png");
-
-type IoniconName = keyof typeof Ionicons.glyphMap;
 
 type CaseStatus =
   | "pending"
   | "reviewed"
-  | "closed";
+  | "closed"
+  | "improving"
+  | string;
 
-type ActionModalType =
+type ChildInfo = {
+  id?: string;
+  _id?: string;
+  name?: string;
+  age?: number;
+  gender?: string;
+  parentId?: string;
+};
+
+type CaseDetailsResponse = {
+  caseId?: string;
+  childId?: string;
+  childInfo?: ChildInfo;
+
+  progressStatus?: {
+    label?: string;
+    description?: string;
+  };
+
+  entriesInfo?: {
+    totalEntries?: number;
+    lastAnalysisDate?: string | null;
+  };
+
+  currentAnalysis?: {
+    text?: string;
+  };
+
+  emotionData?: {
+    emotion?: string;
+    percentage?: number;
+    keywords?: string[];
+  };
+
+  entriesCount?: number;
+  lastAnalysisDate?: string | null;
+  dominantEmotion?: string;
+  emotionPercentage?: number;
+  aiDiagnosis?: string;
+  aiSummary?: string;
+  childProgress?: string;
+  status?: CaseStatus;
+  priority?: string;
+  doctorRecommendation?: string;
+  recurringPatterns?: string[];
+  createdAt?: string;
+};
+
+type HistoryCase = {
+  _id?: string;
+  childId?:
+    | string
+    | {
+        _id?: string;
+        id?: string;
+      };
+};
+
+type ReviewResponse = {
+  success?: boolean;
+  message?: string;
+  notificationSent?: boolean;
+  case?: {
+    status?: CaseStatus;
+    doctorRecommendation?: string;
+  };
+};
+
+type ModalType =
   | "recommendation_required"
   | "submit_success"
   | "submit_error"
-  | "mark_reviewed_confirm"
-  | "reviewed_success"
-  | "already_reviewed"
-  | "close_confirm"
-  | "closed_success"
-  | "already_closed";
+  | "already_reviewed";
 
 type ModalContent = {
-  icon: IoniconName;
+  icon: keyof typeof Ionicons.glyphMap;
   iconColor: string;
-  iconGradient: [string, string];
-  badgeText: string;
-  badgeBackground: string;
-  badgeTextColor: string;
   title: string;
   message: string;
-  primaryText: string;
-  secondaryText?: string;
-};
-
-type CaseData = {
-  name: string;
-  childId: string;
-  age: number;
-  avatar: number;
-  trend: string;
-  trendDescription: string;
-  totalEntries: number;
-  lastAnalysis: string;
-  dominantEmotion: string;
-  confidence: string;
-  analysisText: string;
-  aiSummary: string;
-  tags: string[];
-};
-
-const casesData: Record<string, CaseData> = {
-  Lily: {
-    name: "Lily",
-    childId: "#1045",
-    age: 5,
-    avatar: girlPhoto,
-    trend: "Improving",
-    trendDescription:
-      "Showing gradual improvement, but still needs monitoring.",
-    totalEntries: 8,
-    lastAnalysis: "May 12, 2026",
-    dominantEmotion: "Anxiety",
-    confidence: "75%",
-    analysisText:
-      "The child has recently shown signs of anxiety before going to school and appears worried during social interactions.",
-    aiSummary:
-      "Recent entries indicate mild anxiety related to the school environment, with noticeable improvement compared to previous submissions.",
-    tags: ["School", "Fear", "Sleep", "Stress"],
-  },
-
-  Sammy: {
-    name: "Sammy",
-    childId: "#11045",
-    age: 5,
-    avatar: boyPhoto,
-    trend: "Improving",
-    trendDescription:
-      "Emotional responses are becoming more stable over time.",
-    totalEntries: 6,
-    lastAnalysis: "May 15, 2026",
-    dominantEmotion: "Emotional Stress",
-    confidence: "75%",
-    analysisText:
-      "The child has shown increased emotional sensitivity during recent daily routines and social situations.",
-    aiSummary:
-      "Recent entries show emotional sensitivity with gradual improvement in emotional regulation and social interaction.",
-    tags: ["Routine", "Stress", "Social", "Mood"],
-  },
-
-  Adam: {
-    name: "Adam",
-    childId: "#1072",
-    age: 6,
-    avatar: boyPhoto,
-    trend: "Needs Monitoring",
-    trendDescription:
-      "Emotional stress is still appearing during school attendance and group activities.",
-    totalEntries: 5,
-    lastAnalysis: "May 3, 2026",
-    dominantEmotion: "Stress",
-    confidence: "68%",
-    analysisText:
-      "The child has recently shown signs of emotional stress during school attendance and group activities.",
-    aiSummary:
-      "Recent entries suggest moderate school-related stress that requires continued observation and structured support.",
-    tags: ["School", "Stress", "Groups", "Routine"],
-  },
+  buttonText: string;
 };
 
 const getParamValue = (
   value?: string | string[]
-): string | undefined => {
+): string => {
   return Array.isArray(value)
-    ? value[0]
-    : value;
+    ? value[0] || ""
+    : value || "";
+};
+
+const formatDate = (
+  value?: string | null
+): string => {
+  if (!value) {
+    return "Not available";
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return "Not available";
+  }
+
+  return parsedDate.toLocaleDateString(
+    "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }
+  );
+};
+
+const normalizePercentage = (
+  value?: number
+): number => {
+  if (
+    value === undefined ||
+    value === null ||
+    Number.isNaN(Number(value))
+  ) {
+    return 0;
+  }
+
+  const numberValue = Number(value);
+
+  const normalized =
+    numberValue <= 1
+      ? numberValue * 100
+      : numberValue;
+
+  return Math.max(
+    0,
+    Math.min(100, normalized)
+  );
+};
+
+const getRequestErrorMessage = (
+  error: unknown,
+  fallback: string
+): string => {
+  if (!axios.isAxiosError(error)) {
+    return fallback;
+  }
+
+  const responseData = error.response
+    ?.data as
+    | {
+        message?: unknown;
+        error?: unknown;
+        detail?: unknown;
+      }
+    | undefined;
+
+  const candidate =
+    responseData?.message ??
+    responseData?.error ??
+    responseData?.detail;
+
+  if (
+    typeof candidate === "string" &&
+    candidate.trim()
+  ) {
+    return candidate;
+  }
+
+  return fallback;
+};
+
+const getHistoryChildId = (
+  item: HistoryCase
+): string => {
+  if (typeof item.childId === "string") {
+    return item.childId;
+  }
+
+  return (
+    item.childId?._id ||
+    item.childId?.id ||
+    ""
+  );
 };
 
 export default function ReviewCaseScreen() {
   const params = useLocalSearchParams<{
-    child?: string | string[];
+    caseId?: string | string[];
     childId?: string | string[];
   }>();
 
-  const childParam = getParamValue(
-    params.child
+  const caseIdParam = getParamValue(
+    params.caseId
   );
 
   const childIdParam = getParamValue(
     params.childId
   );
 
-  const selectedCase =
-    childParam && casesData[childParam]
-      ? casesData[childParam]
-      : casesData.Lily;
-
-  const displayChildId =
-    childIdParam || selectedCase.childId;
-
   const recommendationInputRef =
     useRef<TextInput>(null);
+
+  const [
+    caseData,
+    setCaseData,
+  ] =
+    useState<CaseDetailsResponse | null>(
+      null
+    );
+
+  const [
+    resolvedCaseId,
+    setResolvedCaseId,
+  ] = useState("");
 
   const [
     recommendation,
     setRecommendation,
   ] = useState("");
 
-  const [caseStatus, setCaseStatus] =
-    useState<CaseStatus>("pending");
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
-  const [submitting, setSubmitting] =
-    useState(false);
+  const [
+    refreshing,
+    setRefreshing,
+  ] = useState(false);
 
-  const [actionModal, setActionModal] =
-    useState<ActionModalType | null>(null);
+  const [
+    submitting,
+    setSubmitting,
+  ] = useState(false);
+
+  const [
+    screenError,
+    setScreenError,
+  ] = useState("");
+
+  const [
+    actionModal,
+    setActionModal,
+  ] = useState<ModalType | null>(
+    null
+  );
+
+  const handleExpiredSession =
+    useCallback(async () => {
+      await AsyncStorage.multiRemove([
+        "token",
+        "user",
+      ]);
+
+      router.replace(
+        "/auth/login" as Href
+      );
+    }, []);
+
+  const resolveCaseId =
+    useCallback(async (): Promise<string> => {
+      if (caseIdParam) {
+        return caseIdParam;
+      }
+
+      if (!childIdParam) {
+        return "";
+      }
+
+      const historyResponse =
+        await API.get<HistoryCase[]>(
+          "/doctor/history"
+        );
+
+      const matchingCase =
+        historyResponse.data.find(
+          (item) =>
+            getHistoryChildId(item) ===
+            childIdParam
+        );
+
+      return matchingCase?._id || "";
+    }, [
+      caseIdParam,
+      childIdParam,
+    ]);
+
+  const loadCase =
+    useCallback(
+      async (
+        mode:
+          | "initial"
+          | "refresh" = "initial"
+      ) => {
+        if (mode === "refresh") {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
+
+        setScreenError("");
+
+        try {
+          const targetCaseId =
+            await resolveCaseId();
+
+          if (!targetCaseId) {
+            throw new Error(
+              "Case ID is missing. Open this screen from a case card or notification."
+            );
+          }
+
+          const response =
+            await API.get<CaseDetailsResponse>(
+              `/doctor/case-details/${targetCaseId}`
+            );
+
+          setResolvedCaseId(
+            response.data.caseId ||
+              targetCaseId
+          );
+
+          setCaseData(response.data);
+
+          setRecommendation(
+            response.data
+              .doctorRecommendation ||
+              ""
+          );
+        } catch (error) {
+          console.log(
+            "LOAD CASE ERROR:",
+            error
+          );
+
+          if (
+            axios.isAxiosError(error) &&
+            error.response?.status === 401
+          ) {
+            await handleExpiredSession();
+            return;
+          }
+
+          setScreenError(
+            error instanceof Error &&
+              error.message.includes(
+                "Case ID is missing"
+              )
+              ? error.message
+              : getRequestErrorMessage(
+                  error,
+                  "The case details could not be loaded."
+                )
+          );
+        } finally {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      },
+      [
+        handleExpiredSession,
+        resolveCaseId,
+      ]
+    );
+
+  useEffect(() => {
+    void loadCase("initial");
+  }, [loadCase]);
+
+  const childInfo =
+    caseData?.childInfo || {};
+
+  const childName =
+    childInfo.name ||
+    "Unknown child";
+
+  const childId =
+    caseData?.childId ||
+    childInfo.id ||
+    childInfo._id ||
+    childIdParam;
+
+  const caseStatus =
+    caseData?.status ||
+    "pending";
+
+  const isReviewed =
+    caseStatus === "reviewed";
+
+  const isClosed =
+    caseStatus === "closed";
+
+  const childAvatar =
+    String(
+      childInfo.gender || ""
+    )
+      .trim()
+      .toLowerCase() ===
+    "female"
+      ? girlPhoto
+      : boyPhoto;
+
+  const dominantEmotion =
+    caseData?.emotionData?.emotion ||
+    caseData?.dominantEmotion ||
+    "Not available";
+
+  const confidence =
+    normalizePercentage(
+      caseData?.emotionData
+        ?.percentage ??
+        caseData?.emotionPercentage
+    );
+
+  const tags = useMemo(() => {
+    const source =
+      caseData?.emotionData
+        ?.keywords ||
+      caseData?.recurringPatterns ||
+      [];
+
+    return Array.from(
+      new Set(
+        source.filter(
+          (item): item is string =>
+            typeof item === "string" &&
+            Boolean(item.trim())
+        )
+      )
+    );
+  }, [caseData]);
+
+  const totalEntries =
+    caseData?.entriesInfo
+      ?.totalEntries ??
+    caseData?.entriesCount ??
+    0;
+
+  const lastAnalysisDate =
+    caseData?.entriesInfo
+      ?.lastAnalysisDate ??
+    caseData?.lastAnalysisDate ??
+    caseData?.createdAt;
+
+  const progressLabel =
+    caseData?.progressStatus?.label ||
+    caseData?.childProgress ||
+    caseStatus;
+
+  const progressDescription =
+    caseData?.progressStatus
+      ?.description ||
+    "The child's emotional progress requires continued monitoring.";
+
+  const currentAnalysis =
+    caseData?.currentAnalysis?.text ||
+    "No current text analysis is available.";
+
+  const aiSummary =
+    caseData?.aiSummary ||
+    caseData?.aiDiagnosis ||
+    "No AI summary is available.";
 
   const handleBack = () => {
     router.back();
   };
 
   const handleViewOverview = () => {
+    if (!childId) {
+      return;
+    }
+
     router.push(
-      `/doctor/child-overview?child=${encodeURIComponent(
-        selectedCase.name
-      )}&childId=${encodeURIComponent(
-        displayChildId
+      `/doctor/child-overview?childId=${encodeURIComponent(
+        childId
+      )}&caseId=${encodeURIComponent(
+        resolvedCaseId
       )}` as Href
     );
   };
 
-  const handleSubmitResponse = async () => {
-    if (submitting) return;
+  const submitRecommendation =
+    async () => {
+      if (submitting) {
+        return;
+      }
 
-    if (!recommendation.trim()) {
-      setActionModal(
-        "recommendation_required"
-      );
-
-      return;
-    }
-
-    if (caseStatus === "closed") {
-      setActionModal("already_closed");
-
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-
-      /*
-        Front-End only:
-        سيتم لاحقًا إرسال التوصية إلى الـBackend.
-      */
-      await new Promise((resolve) =>
-        setTimeout(resolve, 600)
-      );
-
-      /*
-        بعد إرسال التوصية بنجاح،
-        الحالة تعتبر Reviewed.
-      */
-      setCaseStatus("reviewed");
-      setRecommendation("");
-      setActionModal("submit_success");
-    } catch (error) {
-      console.log(
-        "Submit recommendation error:",
-        error
-      );
-
-      setActionModal("submit_error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleMarkAsReviewed = () => {
-    if (caseStatus === "closed") {
-      setActionModal("already_closed");
-
-      return;
-    }
-
-    if (caseStatus === "reviewed") {
-      setActionModal("already_reviewed");
-
-      return;
-    }
-
-    setActionModal(
-      "mark_reviewed_confirm"
-    );
-  };
-
-  const handleCloseCase = () => {
-    if (caseStatus === "closed") {
-      setActionModal("already_closed");
-
-      return;
-    }
-
-    setActionModal("close_confirm");
-  };
-
-  const confirmMarkAsReviewed = () => {
-    setCaseStatus("reviewed");
-    setActionModal("reviewed_success");
-  };
-
-  const confirmCloseCase = () => {
-    setCaseStatus("closed");
-    setActionModal("closed_success");
-  };
-
-  const closeModal = () => {
-    setActionModal(null);
-  };
-
-  const handleModalPrimaryAction = () => {
-    switch (actionModal) {
-      case "recommendation_required":
-        closeModal();
-
-        setTimeout(() => {
-          recommendationInputRef.current?.focus();
-        }, 250);
+      if (!recommendation.trim()) {
+        setActionModal(
+          "recommendation_required"
+        );
 
         return;
+      }
 
-      case "mark_reviewed_confirm":
-        confirmMarkAsReviewed();
+      if (!resolvedCaseId) {
+        setActionModal("submit_error");
         return;
+      }
 
-      case "close_confirm":
-        confirmCloseCase();
+      if (isClosed) {
+        setActionModal("submit_error");
         return;
+      }
 
-      case "submit_success":
-      case "submit_error":
-      case "reviewed_success":
-      case "already_reviewed":
-      case "closed_success":
-      case "already_closed":
-      default:
-        closeModal();
-    }
-  };
+      try {
+        setSubmitting(true);
 
-  const getModalContent = (): ModalContent => {
-    switch (actionModal) {
-      case "recommendation_required":
-        return {
-          icon: "create-outline",
-          iconColor: "#6799C2",
-          iconGradient: [
-            "#DCEFFF",
-            "#FFE4E6",
-          ],
-          badgeText: "Recommendation needed",
-          badgeBackground: "#FFF3E6",
-          badgeTextColor: "#C87C35",
-          title: "Add your recommendation",
-          message:
-            "Write a professional recommendation before submitting this case.",
-          primaryText: "Back to Writing",
-        };
+        const response =
+          await API.put<ReviewResponse>(
+            `/doctor/review-case/${resolvedCaseId}`,
+            {
+              doctorRecommendation:
+                recommendation.trim(),
+            }
+          );
 
-      case "submit_success":
-        return {
-          icon: "paper-plane-outline",
-          iconColor: "#4CAC62",
-          iconGradient: [
-            "#E2F8E8",
-            "#EAF5FF",
-          ],
-          badgeText: "Successfully submitted",
-          badgeBackground: "#E7F8EB",
-          badgeTextColor: "#409B54",
-          title: "Recommendation sent",
-          message: `Your recommendation for ${selectedCase.name} has been submitted successfully. The case is now marked as reviewed.`,
-          primaryText: "Done",
-        };
+        setCaseData(
+          (currentCase) => ({
+            ...currentCase,
+            status:
+              response.data.case
+                ?.status ||
+              "reviewed",
+            doctorRecommendation:
+              response.data.case
+                ?.doctorRecommendation ||
+              recommendation.trim(),
+          })
+        );
 
-      case "submit_error":
-        return {
-          icon: "alert-circle-outline",
-          iconColor: "#D95C64",
-          iconGradient: [
-            "#FFE6E8",
-            "#FFF3F3",
-          ],
-          badgeText: "Submission failed",
-          badgeBackground: "#FFF0F1",
-          badgeTextColor: "#CA555D",
-          title: "We couldn't send it",
-          message:
-            "Something went wrong while submitting the recommendation. Please try again.",
-          primaryText: "Try Again",
-        };
+        setActionModal(
+          "submit_success"
+        );
+      } catch (error) {
+        console.log(
+          "SUBMIT RECOMMENDATION ERROR:",
+          error
+        );
 
-      case "mark_reviewed_confirm":
-        return {
-          icon: "checkmark-done-outline",
-          iconColor: "#4AAA60",
-          iconGradient: [
-            "#E2F8E8",
-            "#EAF5FF",
-          ],
-          badgeText: "Review status",
-          badgeBackground: "#E8F8EC",
-          badgeTextColor: "#459B57",
-          title: "Mark this case as reviewed?",
-          message: `This will move ${selectedCase.name}'s case from Pending Review to Reviewed.`,
-          primaryText: "Mark as Reviewed",
-          secondaryText: "Cancel",
-        };
+        if (
+          axios.isAxiosError(error) &&
+          error.response?.status === 401
+        ) {
+          await handleExpiredSession();
+          return;
+        }
 
-      case "reviewed_success":
-        return {
-          icon: "checkmark-circle-outline",
-          iconColor: "#46AE5B",
-          iconGradient: [
-            "#DCF7E3",
-            "#EAF5FF",
-          ],
-          badgeText: "Status updated",
-          badgeBackground: "#E7F8EB",
-          badgeTextColor: "#409B54",
-          title: "Case marked as reviewed",
-          message: `${selectedCase.name}'s case has been moved to the reviewed cases list.`,
-          primaryText: "Done",
-        };
+        setActionModal("submit_error");
+      } finally {
+        setSubmitting(false);
+      }
+    };
 
-      case "already_reviewed":
-        return {
-          icon: "shield-checkmark-outline",
-          iconColor: "#5E96C2",
-          iconGradient: [
-            "#E3F2FF",
-            "#F1F8FF",
-          ],
-          badgeText: "Already reviewed",
-          badgeBackground: "#EAF5FF",
-          badgeTextColor: "#5A88AC",
-          title: "No update needed",
-          message: `${selectedCase.name}'s case is already marked as reviewed.`,
-          primaryText: "Got It",
-        };
+  const handleMarkAsReviewed =
+    () => {
+      if (isReviewed) {
+        setActionModal(
+          "already_reviewed"
+        );
+        return;
+      }
 
-      case "close_confirm":
-        return {
-          icon: "lock-closed-outline",
-          iconColor: "#D85A62",
-          iconGradient: [
-            "#FFE3E5",
-            "#FFF1F2",
-          ],
-          badgeText: "Close case",
-          badgeBackground: "#FFF0F1",
-          badgeTextColor: "#C9535A",
-          title: "Close this case?",
-          message: `Closing ${selectedCase.name}'s case will move it to the closed cases list. Its analyses and recommendations will remain available in History.`,
-          primaryText: "Close Case",
-          secondaryText: "Keep Open",
-        };
-
-      case "closed_success":
-        return {
-          icon: "lock-closed-outline",
-          iconColor: "#737C84",
-          iconGradient: [
-            "#EDF0F2",
-            "#F7F8F9",
-          ],
-          badgeText: "Case closed",
-          badgeBackground: "#ECEFF1",
-          badgeTextColor: "#747C83",
-          title: "The case has been closed",
-          message: `${selectedCase.name}'s case is now available in the closed cases section of History.`,
-          primaryText: "Done",
-        };
-
-      case "already_closed":
-        return {
-          icon: "lock-closed-outline",
-          iconColor: "#778089",
-          iconGradient: [
-            "#ECEFF2",
-            "#F6F7F8",
-          ],
-          badgeText: "Closed case",
-          badgeBackground: "#ECEFF1",
-          badgeTextColor: "#747C83",
-          title: "This case is already closed",
-          message:
-            "No additional actions can be submitted while the case is closed.",
-          primaryText: "Got It",
-        };
-
-      default:
-        return {
-          icon: "information-circle-outline",
-          iconColor: "#6799C2",
-          iconGradient: [
-            "#DCEFFF",
-            "#FFE4E6",
-          ],
-          badgeText: "Case information",
-          badgeBackground: "#EAF5FF",
-          badgeTextColor: "#5A88AC",
-          title: "Case update",
-          message:
-            "The case information has been updated.",
-          primaryText: "Done",
-        };
-    }
-  };
+      void submitRecommendation();
+    };
 
   const getStatusText = () => {
-    if (caseStatus === "reviewed") {
+    if (isReviewed) {
       return "Reviewed";
     }
 
-    if (caseStatus === "closed") {
+    if (isClosed) {
       return "Closed";
     }
 
     return "Pending Review";
   };
 
-  const modalContent = getModalContent();
+  const getModalContent =
+    (): ModalContent => {
+      switch (actionModal) {
+        case "recommendation_required":
+          return {
+            icon: "create-outline",
+            iconColor: "#6799C2",
+            title:
+              "Add your recommendation",
+            message:
+              "The backend requires a professional recommendation before the case can be marked as reviewed.",
+            buttonText:
+              "Back to Writing",
+          };
 
-  const isCloseConfirmation =
-    actionModal === "close_confirm";
+        case "submit_success":
+          return {
+            icon:
+              "checkmark-circle-outline",
+            iconColor: "#4CAC62",
+            title:
+              "Recommendation sent",
+            message:
+              `Your recommendation for ${childName} was saved. The parent notification is handled by the backend.`,
+            buttonText: "Done",
+          };
+
+        case "already_reviewed":
+          return {
+            icon:
+              "shield-checkmark-outline",
+            iconColor: "#5E96C2",
+            title:
+              "Already reviewed",
+            message:
+              `${childName}'s case is already marked as reviewed.`,
+            buttonText: "Got It",
+          };
+
+        case "submit_error":
+        default:
+          return {
+            icon:
+              "alert-circle-outline",
+            iconColor: "#D95C64",
+            title:
+              "We couldn't submit it",
+            message:
+              "The recommendation could not be saved. Check the backend terminal and try again.",
+            buttonText: "Close",
+          };
+      }
+    };
+
+  const modalContent =
+    getModalContent();
+
+  const closeModal = () => {
+    const shouldFocus =
+      actionModal ===
+      "recommendation_required";
+
+    setActionModal(null);
+
+    if (shouldFocus) {
+      setTimeout(() => {
+        recommendationInputRef.current?.focus();
+      }, 250);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView
+        style={styles.centerState}
+      >
+        <ActivityIndicator
+          size="large"
+          color="#6799C2"
+        />
+
+        <Text
+          style={styles.stateTitle}
+        >
+          Loading case...
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (screenError || !caseData) {
+    return (
+      <SafeAreaView
+        style={styles.safeArea}
+      >
+        <StatusBar
+          barStyle="dark-content"
+          backgroundColor="#FFFFFF"
+        />
+
+        <View
+          style={styles.errorHeader}
+        >
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={handleBack}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={24}
+              color="#1F2937"
+            />
+          </TouchableOpacity>
+
+          <Text
+            style={styles.headerTitle}
+          >
+            Review Case
+          </Text>
+
+          <View
+            style={
+              styles.headerPlaceholder
+            }
+          />
+        </View>
+
+        <View
+          style={styles.centerState}
+        >
+          <Ionicons
+            name="alert-circle-outline"
+            size={48}
+            color="#D95C64"
+          />
+
+          <Text
+            style={styles.stateTitle}
+          >
+            Case unavailable
+          </Text>
+
+          <Text
+            style={styles.stateMessage}
+          >
+            {screenError}
+          </Text>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={styles.retryButton}
+            onPress={() =>
+              void loadCase("initial")
+            }
+          >
+            <Text
+              style={
+                styles.retryButtonText
+              }
+            >
+              Try Again
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView
@@ -532,11 +823,22 @@ export default function ReviewCaseScreen() {
             contentContainerStyle={
               styles.scrollContent
             }
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={
+              false
+            }
             keyboardShouldPersistTaps="handled"
-            bounces={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() =>
+                  void loadCase(
+                    "refresh"
+                  )
+                }
+                tintColor="#6799C2"
+              />
+            }
           >
-            {/* Header */}
             <View style={styles.header}>
               <TouchableOpacity
                 style={styles.backButton}
@@ -550,19 +852,35 @@ export default function ReviewCaseScreen() {
                 />
               </TouchableOpacity>
 
-              <Text style={styles.headerTitle}>
+              <Text
+                style={styles.headerTitle}
+              >
                 Review Case
               </Text>
 
-              <View
+              <TouchableOpacity
                 style={
-                  styles.headerPlaceholder
+                  styles.headerRefresh
                 }
-              />
+                activeOpacity={0.7}
+                onPress={() =>
+                  void loadCase(
+                    "refresh"
+                  )
+                }
+                disabled={refreshing}
+              >
+                <Ionicons
+                  name="refresh-outline"
+                  size={21}
+                  color="#1F2937"
+                />
+              </TouchableOpacity>
             </View>
 
-            {/* Child Information */}
-            <View style={styles.childCard}>
+            <View
+              style={styles.childCard}
+            >
               <View
                 style={
                   styles.childDecorationLeft
@@ -581,10 +899,9 @@ export default function ReviewCaseScreen() {
                 }
               >
                 <Image
-                  source={selectedCase.avatar}
+                  source={childAvatar}
                   style={styles.childAvatar}
                   contentFit="cover"
-                  transition={150}
                 />
               </View>
 
@@ -593,34 +910,45 @@ export default function ReviewCaseScreen() {
                   styles.childInformation
                 }
               >
-                <Text style={styles.childName}>
-                  {selectedCase.name}
+                <Text
+                  style={styles.childName}
+                >
+                  {childName}
                 </Text>
 
                 <Text
-                  style={styles.childDetails}
+                  style={
+                    styles.childDetails
+                  }
                 >
-                  Child ID {displayChildId} ·{" "}
-                  {selectedCase.age} years old
+                  Child ID{" "}
+                  {childId
+                    ? `#${childId.slice(
+                        -6
+                      )}`
+                    : "Not available"}{" "}
+                  ·{" "}
+                  {childInfo.age ??
+                    "—"}{" "}
+                  years old
                 </Text>
               </View>
 
               <View
                 style={[
                   styles.statusBadge,
-                  caseStatus === "reviewed" &&
+                  isReviewed &&
                     styles.reviewedBadge,
-                  caseStatus === "closed" &&
+                  isClosed &&
                     styles.closedBadge,
                 ]}
               >
                 <Text
                   style={[
                     styles.statusBadgeText,
-                    caseStatus ===
-                      "reviewed" &&
+                    isReviewed &&
                       styles.reviewedBadgeText,
-                    caseStatus === "closed" &&
+                    isClosed &&
                       styles.closedBadgeText,
                   ]}
                 >
@@ -629,8 +957,9 @@ export default function ReviewCaseScreen() {
               </View>
             </View>
 
-            {/* Quick Summary */}
-            <View style={styles.summaryRow}>
+            <View
+              style={styles.summaryRow}
+            >
               <View
                 style={[
                   styles.summaryCard,
@@ -644,9 +973,11 @@ export default function ReviewCaseScreen() {
                 />
 
                 <Text
-                  style={styles.summaryLabel}
+                  style={
+                    styles.summaryLabel
+                  }
                 >
-                  {selectedCase.trend}
+                  {progressLabel}
                 </Text>
 
                 <Text
@@ -654,9 +985,7 @@ export default function ReviewCaseScreen() {
                     styles.summaryDescription
                   }
                 >
-                  {
-                    selectedCase.trendDescription
-                  }
+                  {progressDescription}
                 </Text>
               </View>
 
@@ -667,15 +996,19 @@ export default function ReviewCaseScreen() {
                 ]}
               >
                 <Text
-                  style={styles.entriesLabel}
+                  style={
+                    styles.entriesLabel
+                  }
                 >
                   Entries
                 </Text>
 
                 <Text
-                  style={styles.entriesValue}
+                  style={
+                    styles.entriesValue
+                  }
                 >
-                  {selectedCase.totalEntries} Total
+                  {totalEntries} Total
                 </Text>
 
                 <Text
@@ -691,13 +1024,16 @@ export default function ReviewCaseScreen() {
                     styles.lastAnalysisValue
                   }
                 >
-                  {selectedCase.lastAnalysis}
+                  {formatDate(
+                    lastAnalysisDate
+                  )}
                 </Text>
               </View>
             </View>
 
-            {/* Current Analysis */}
-            <Text style={styles.sectionTitle}>
+            <Text
+              style={styles.sectionTitle}
+            >
               Current Analysis
             </Text>
 
@@ -706,21 +1042,28 @@ export default function ReviewCaseScreen() {
                 styles.analysisTextCard
               }
             >
-              <Text style={styles.quoteIcon}>
+              <Text
+                style={styles.quoteIcon}
+              >
                 “
               </Text>
 
               <Text
-                style={styles.analysisText}
+                style={
+                  styles.analysisText
+                }
               >
-                {selectedCase.analysisText}
+                {currentAnalysis}
               </Text>
             </View>
 
-            {/* Dominant Emotion */}
-            <View style={styles.emotionCard}>
+            <View
+              style={styles.emotionCard}
+            >
               <View
-                style={styles.emotionMainRow}
+                style={
+                  styles.emotionMainRow
+                }
               >
                 <View
                   style={
@@ -748,26 +1091,47 @@ export default function ReviewCaseScreen() {
                   </Text>
 
                   <Text
-                    style={styles.emotionValue}
-                  >
-                    {
-                      selectedCase.dominantEmotion
+                    style={
+                      styles.emotionValue
                     }
+                  >
+                    {dominantEmotion}
                   </Text>
                 </View>
 
-                <Image
-                  source={confidenceImage}
-                  style={styles.confidenceImage}
-                  contentFit="contain"
-                />
+                <View
+                  style={
+                    styles.confidenceBadge
+                  }
+                >
+                  <Text
+                    style={
+                      styles.confidenceValue
+                    }
+                  >
+                    {confidence.toFixed(
+                      0
+                    )}
+                    %
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.confidenceLabel
+                    }
+                  >
+                    Confidence
+                  </Text>
+                </View>
               </View>
 
-              <View
-                style={styles.tagsContainer}
-              >
-                {selectedCase.tags.map(
-                  (tag) => (
+              {tags.length > 0 ? (
+                <View
+                  style={
+                    styles.tagsContainer
+                  }
+                >
+                  {tags.map((tag) => (
                     <View
                       key={tag}
                       style={
@@ -782,12 +1146,11 @@ export default function ReviewCaseScreen() {
                         {tag}
                       </Text>
                     </View>
-                  )
-                )}
-              </View>
+                  ))}
+                </View>
+              ) : null}
             </View>
 
-            {/* AI Summary */}
             <LinearGradient
               colors={[
                 "#DFF1FF",
@@ -796,34 +1159,67 @@ export default function ReviewCaseScreen() {
               ]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.aiSummaryCard}
+              style={
+                styles.aiSummaryCard
+              }
             >
-              <View style={styles.aiTitleRow}>
+              <View
+                style={styles.aiTitleRow}
+              >
                 <Ionicons
                   name="sparkles-outline"
                   size={17}
                   color="#E7A82A"
                 />
 
-                <Text style={styles.aiTitle}>
+                <Text
+                  style={styles.aiTitle}
+                >
                   AI SUMMARY
                 </Text>
               </View>
 
               <Text
-                style={styles.aiSummaryText}
+                style={
+                  styles.aiSummaryText
+                }
               >
-                {selectedCase.aiSummary}
+                {aiSummary}
               </Text>
+
+              {caseData.priority ? (
+                <View
+                  style={
+                    styles.priorityBadge
+                  }
+                >
+                  <Text
+                    style={
+                      styles.priorityText
+                    }
+                  >
+                    Priority:{" "}
+                    {caseData.priority}
+                  </Text>
+                </View>
+              ) : null}
             </LinearGradient>
 
-            {/* View Child Overview */}
             <TouchableOpacity
               activeOpacity={0.8}
-              style={styles.overviewCard}
-              onPress={handleViewOverview}
+              style={
+                styles.overviewCard
+              }
+              onPress={
+                handleViewOverview
+              }
+              disabled={!childId}
             >
-              <View style={styles.overviewIcon}>
+              <View
+                style={
+                  styles.overviewIcon
+                }
+              >
                 <Ionicons
                   name="bar-chart-outline"
                   size={22}
@@ -837,7 +1233,9 @@ export default function ReviewCaseScreen() {
                 }
               >
                 <Text
-                  style={styles.overviewTitle}
+                  style={
+                    styles.overviewTitle
+                  }
                 >
                   View Child Overview
                 </Text>
@@ -858,13 +1256,14 @@ export default function ReviewCaseScreen() {
               />
             </TouchableOpacity>
 
-            {/* Doctor Recommendation */}
             <View
               style={
                 styles.recommendationHeader
               }
             >
-              <Text style={styles.sectionTitle}>
+              <Text
+                style={styles.sectionTitle}
+              >
                 Doctor Recommendation
               </Text>
 
@@ -873,14 +1272,19 @@ export default function ReviewCaseScreen() {
                   styles.characterCounter
                 }
               >
-                {recommendation.length}/1000
+                {recommendation.length}
+                /1000
               </Text>
             </View>
 
             <TextInput
-              ref={recommendationInputRef}
+              ref={
+                recommendationInputRef
+              }
               value={recommendation}
-              onChangeText={setRecommendation}
+              onChangeText={
+                setRecommendation
+              }
               placeholder="Write your professional recommendation..."
               placeholderTextColor="#ADB1B8"
               multiline
@@ -888,23 +1292,28 @@ export default function ReviewCaseScreen() {
               maxLength={1000}
               editable={
                 !submitting &&
-                caseStatus !== "closed"
+                !isClosed
               }
               style={[
                 styles.recommendationInput,
-                caseStatus === "closed" &&
+                isClosed &&
                   styles.recommendationInputDisabled,
               ]}
             />
 
-            {/* Submit Response */}
             <TouchableOpacity
               activeOpacity={0.9}
-              onPress={handleSubmitResponse}
-              disabled={submitting}
+              onPress={() =>
+                void submitRecommendation()
+              }
+              disabled={
+                submitting ||
+                isClosed
+              }
               style={[
                 styles.submitButtonWrapper,
-                submitting &&
+                (submitting ||
+                  isClosed) &&
                   styles.disabledButton,
               ]}
             >
@@ -913,9 +1322,17 @@ export default function ReviewCaseScreen() {
                   "#A8D4F7",
                   "#F7A8AC",
                 ]}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
-                style={styles.submitButton}
+                start={{
+                  x: 0,
+                  y: 0.5,
+                }}
+                end={{
+                  x: 1,
+                  y: 0.5,
+                }}
+                style={
+                  styles.submitButton
+                }
               >
                 {submitting ? (
                   <ActivityIndicator
@@ -929,7 +1346,9 @@ export default function ReviewCaseScreen() {
                         styles.submitButtonText
                       }
                     >
-                      Submit Recommendation
+                      {isReviewed
+                        ? "Update Recommendation"
+                        : "Submit Recommendation"}
                     </Text>
 
                     <Ionicons
@@ -942,325 +1361,118 @@ export default function ReviewCaseScreen() {
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* Secondary Actions */}
-            <View style={styles.actionsRow}>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                style={[
-                  styles.secondaryButton,
-                  styles.reviewedButton,
-                  caseStatus ===
-                    "reviewed" &&
-                    styles.reviewedButtonActive,
-                  caseStatus === "closed" &&
-                    styles.disabledSecondaryButton,
-                ]}
-                onPress={
-                  handleMarkAsReviewed
-                }
-              >
-                <Ionicons
-                  name={
-                    caseStatus === "reviewed"
-                      ? "checkmark-circle"
-                      : "checkmark-circle-outline"
-                  }
-                  size={17}
-                  color={
-                    caseStatus === "closed"
-                      ? "#8E959C"
-                      : "#47B15C"
-                  }
-                />
-
-                <Text
-                  style={[
-                    styles.reviewedButtonText,
-                    caseStatus ===
-                      "reviewed" &&
-                      styles.reviewedButtonTextActive,
-                    caseStatus ===
-                      "closed" &&
-                      styles.disabledSecondaryText,
-                  ]}
-                >
-                  {caseStatus === "reviewed"
-                    ? "Reviewed"
-                    : "Mark as Reviewed"}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                activeOpacity={0.8}
-                style={[
-                  styles.secondaryButton,
-                  styles.closeButton,
-                  caseStatus === "closed" &&
-                    styles.closedButtonActive,
-                ]}
-                onPress={handleCloseCase}
-              >
-                <Ionicons
-                  name={
-                    caseStatus === "closed"
-                      ? "lock-closed"
-                      : "close-circle-outline"
-                  }
-                  size={17}
-                  color={
-                    caseStatus === "closed"
-                      ? "#747B83"
-                      : "#F13940"
-                  }
-                />
-
-                <Text
-                  style={[
-                    styles.closeButtonText,
-                    caseStatus === "closed" &&
-                      styles.closedButtonTextActive,
-                  ]}
-                >
-                  {caseStatus === "closed"
-                    ? "Closed"
-                    : "Close Case"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </LinearGradient>
-      </KeyboardAvoidingView>
-
-      {/* Custom Action Modal */}
-      <Modal
-        visible={actionModal !== null}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={closeModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <LinearGradient
-              colors={
-                modalContent.iconGradient
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[
+                styles.reviewedButton,
+                isReviewed &&
+                  styles.reviewedButtonActive,
+              ]}
+              onPress={
+                handleMarkAsReviewed
               }
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.modalIcon}
+              disabled={
+                submitting ||
+                isClosed
+              }
             >
               <Ionicons
-                name={modalContent.icon}
-                size={39}
-                color={modalContent.iconColor}
-              />
-
-              {actionModal ===
-                "submit_success" ||
-              actionModal ===
-                "reviewed_success" ||
-              actionModal ===
-                "closed_success" ? (
-                <View
-                  style={
-                    styles.modalSuccessBadge
-                  }
-                >
-                  <Ionicons
-                    name="checkmark"
-                    size={14}
-                    color="#FFFFFF"
-                  />
-                </View>
-              ) : null}
-            </LinearGradient>
-
-            <View
-              style={[
-                styles.modalStatusBadge,
-                {
-                  backgroundColor:
-                    modalContent.badgeBackground,
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.modalStatusDot,
-                  {
-                    backgroundColor:
-                      modalContent.badgeTextColor,
-                  },
-                ]}
+                name={
+                  isReviewed
+                    ? "checkmark-circle"
+                    : "checkmark-circle-outline"
+                }
+                size={18}
+                color={
+                  isReviewed
+                    ? "#3C9A51"
+                    : "#47B15C"
+                }
               />
 
               <Text
                 style={[
-                  styles.modalStatusText,
-                  {
-                    color:
-                      modalContent.badgeTextColor,
-                  },
+                  styles.reviewedButtonText,
+                  isReviewed &&
+                    styles.reviewedButtonTextActive,
                 ]}
               >
-                {modalContent.badgeText}
+                {isReviewed
+                  ? "Reviewed"
+                  : "Mark as Reviewed"}
               </Text>
+            </TouchableOpacity>
+
+            <Text
+              style={
+                styles.backendNote
+              }
+            >
+              Close Case is not shown because the current backend does not provide a close-case endpoint.
+            </Text>
+          </ScrollView>
+        </LinearGradient>
+      </KeyboardAvoidingView>
+
+      <Modal
+        visible={
+          actionModal !== null
+        }
+        transparent
+        animationType="fade"
+        onRequestClose={closeModal}
+      >
+        <View
+          style={styles.modalOverlay}
+        >
+          <View
+            style={styles.modalCard}
+          >
+            <View
+              style={
+                styles.modalIcon
+              }
+            >
+              <Ionicons
+                name={
+                  modalContent.icon
+                }
+                size={39}
+                color={
+                  modalContent.iconColor
+                }
+              />
             </View>
 
-            <Text style={styles.modalTitle}>
+            <Text
+              style={styles.modalTitle}
+            >
               {modalContent.title}
             </Text>
 
             <Text
-              style={styles.modalDescription}
+              style={
+                styles.modalDescription
+              }
             >
               {modalContent.message}
             </Text>
 
-            {actionModal ===
-            "recommendation_required" ? (
-              <View
-                style={styles.modalInfoCard}
-              >
-                <View
-                  style={styles.modalInfoIcon}
-                >
-                  <Ionicons
-                    name="document-text-outline"
-                    size={20}
-                    color="#6799C2"
-                  />
-                </View>
-
-                <Text
-                  style={styles.modalInfoText}
-                >
-                  Add clear guidance, suggested steps
-                  and any follow-up period the parent
-                  should observe.
-                </Text>
-              </View>
-            ) : null}
-
-            {actionModal ===
-            "close_confirm" ? (
-              <View
-                style={styles.modalWarningCard}
-              >
-                <Ionicons
-                  name="information-circle-outline"
-                  size={20}
-                  color="#D15A62"
-                />
-
-                <Text
-                  style={styles.modalWarningText}
-                >
-                  Closing the case does not delete its
-                  medical history or previous
-                  recommendations.
-                </Text>
-              </View>
-            ) : null}
-
-            <View
-              style={[
-                styles.modalActions,
-                !modalContent.secondaryText &&
-                  styles.modalSingleAction,
-              ]}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={
+                styles.modalButton
+              }
+              onPress={closeModal}
             >
-              {modalContent.secondaryText ? (
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={closeModal}
-                  style={
-                    styles.modalSecondaryButton
-                  }
-                >
-                  <Text
-                    style={
-                      styles.modalSecondaryButtonText
-                    }
-                  >
-                    {
-                      modalContent.secondaryText
-                    }
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={
-                  handleModalPrimaryAction
+              <Text
+                style={
+                  styles.modalButtonText
                 }
-                style={[
-                  styles.modalPrimaryWrapper,
-                  !modalContent.secondaryText &&
-                    styles.modalPrimaryFullWidth,
-                ]}
               >
-                {isCloseConfirmation ? (
-                  <View
-                    style={
-                      styles.modalDestructiveButton
-                    }
-                  >
-                    <Ionicons
-                      name="lock-closed-outline"
-                      size={17}
-                      color="#FFFFFF"
-                    />
-
-                    <Text
-                      style={
-                        styles.modalDestructiveText
-                      }
-                    >
-                      {modalContent.primaryText}
-                    </Text>
-                  </View>
-                ) : (
-                  <LinearGradient
-                    colors={[
-                      "#8DC0F0",
-                      "#F9A8A7",
-                    ]}
-                    start={{
-                      x: 0,
-                      y: 0.5,
-                    }}
-                    end={{
-                      x: 1,
-                      y: 0.5,
-                    }}
-                    style={
-                      styles.modalPrimaryButton
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.modalPrimaryButtonText
-                      }
-                    >
-                      {modalContent.primaryText}
-                    </Text>
-
-                    <Ionicons
-                      name={
-                        actionModal ===
-                        "recommendation_required"
-                          ? "create-outline"
-                          : "arrow-forward"
-                      }
-                      size={17}
-                      color="#171A1E"
-                    />
-                  </LinearGradient>
-                )}
-              </TouchableOpacity>
-            </View>
+                {modalContent.buttonText}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1268,698 +1480,609 @@ export default function ReviewCaseScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-
-  background: {
-    flex: 1,
-  },
-
-  scrollContent: {
-    paddingHorizontal: 18,
-    paddingTop: 8,
-    paddingBottom: 28,
-  },
-
-  header: {
-    height: 52,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "flex-start",
-  },
-
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: "#1F2328",
-  },
-
-  headerPlaceholder: {
-    width: 40,
-  },
-
-  childCard: {
-    position: "relative",
-    minHeight: 76,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: "#F0DFE2",
-    paddingHorizontal: 12,
-    overflow: "hidden",
-    marginBottom: 14,
-  },
-
-  childDecorationLeft: {
-    position: "absolute",
-    left: -20,
-    top: -15,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#FFF0F1",
-  },
-
-  childDecorationRight: {
-    position: "absolute",
-    right: -14,
-    bottom: -22,
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: "#FFF0F1",
-  },
-
-  childAvatarWrapper: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: "#FFF1EB",
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#F3DED6",
-    marginRight: 10,
-    zIndex: 2,
-  },
-
-  childAvatar: {
-    width: "100%",
-    height: "100%",
-  },
-
-  childInformation: {
-    flex: 1,
-    zIndex: 2,
-  },
-
-  childName: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#24272A",
-  },
-
-  childDetails: {
-    marginTop: 3,
-    fontSize: 9.5,
-    color: "#6E737A",
-  },
-
-  statusBadge: {
-    zIndex: 2,
-    alignSelf: "flex-start",
-    marginTop: 10,
-    backgroundColor: "#FFF0DE",
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
-
-  statusBadgeText: {
-    fontSize: 8,
-    fontWeight: "500",
-    color: "#E49A43",
-  },
-
-  reviewedBadge: {
-    backgroundColor: "#E9F9EC",
-  },
-
-  reviewedBadgeText: {
-    color: "#42A45D",
-  },
-
-  closedBadge: {
-    backgroundColor: "#ECEFF2",
-  },
-
-  closedBadgeText: {
-    color: "#737A83",
-  },
-
-  summaryRow: {
-    flexDirection: "row",
-    gap: 9,
-    marginBottom: 17,
-  },
-
-  summaryCard: {
-    flex: 1,
-    minHeight: 125,
-    borderRadius: 10,
-    padding: 13,
-  },
-
-  trendCard: {
-    backgroundColor: "#EAF6EE",
-  },
-
-  entriesCard: {
-    backgroundColor: "#FFE7E8",
-  },
-
-  summaryLabel: {
-    marginTop: 12,
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#202522",
-  },
-
-  summaryDescription: {
-    marginTop: 15,
-    fontSize: 10,
-    lineHeight: 14,
-    color: "#3D4740",
-  },
-
-  entriesLabel: {
-    fontSize: 12,
-    color: "#34373A",
-  },
-
-  entriesValue: {
-    marginTop: 4,
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#1F2225",
-  },
-
-  lastAnalysisLabel: {
-    marginTop: 20,
-    fontSize: 11,
-    color: "#5B5E62",
-  },
-
-  lastAnalysisValue: {
-    marginTop: 5,
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#25282B",
-  },
-
-  sectionTitle: {
-    marginBottom: 10,
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#30343A",
-  },
-
-  analysisTextCard: {
-    position: "relative",
-    minHeight: 95,
-    justifyContent: "center",
-    backgroundColor: "#F5F5F7",
-    borderLeftWidth: 3,
-    borderLeftColor: "#F5BAC0",
-    paddingHorizontal: 15,
-    paddingVertical: 14,
-    marginBottom: 15,
-  },
-
-  quoteIcon: {
-    position: "absolute",
-    top: 2,
-    left: 7,
-    fontSize: 38,
-    color: "#F4D1D4",
-  },
-
-  analysisText: {
-    fontSize: 10.5,
-    lineHeight: 17,
-    fontStyle: "italic",
-    color: "#4D5156",
-  },
-
-  emotionCard: {
-    backgroundColor: "#FFFFFF",
-    borderLeftWidth: 3,
-    borderLeftColor: "#F4B8BD",
-    borderRadius: 6,
-    paddingHorizontal: 11,
-    paddingVertical: 11,
-    marginBottom: 15,
-    shadowColor: "#B7C0C8",
-    shadowOffset: {
-      width: 0,
-      height: 2,
+const styles =
+  StyleSheet.create({
+    flex: {
+      flex: 1,
     },
-    shadowOpacity: 0.08,
-    shadowRadius: 5,
-    elevation: 1,
-  },
 
-  emotionMainRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  emotionIconWrapper: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 8,
-  },
-
-  emotionTextContainer: {
-    flex: 1,
-  },
-
-  emotionSmallLabel: {
-    fontSize: 8.5,
-    color: "#676D73",
-  },
-
-  emotionValue: {
-    marginTop: 2,
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#25282B",
-  },
-
-  confidenceImage: {
-    width: 50,
-    height: 50,
-  },
-
-  tagsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: 9,
-  },
-
-  emotionTag: {
-    backgroundColor: "#FFF0F1",
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-
-  emotionTagText: {
-    fontSize: 8,
-    color: "#F08C96",
-  },
-
-  aiSummaryCard: {
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 15,
-  },
-
-  aiTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 8,
-  },
-
-  aiTitle: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#252A30",
-  },
-
-  aiSummaryText: {
-    fontSize: 10,
-    lineHeight: 15,
-    color: "#343A40",
-  },
-
-  overviewCard: {
-    minHeight: 63,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F3F3F4",
-    borderRadius: 8,
-    paddingHorizontal: 11,
-    marginBottom: 18,
-  },
-
-  overviewIcon: {
-    width: 37,
-    height: 37,
-    borderRadius: 7,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    marginRight: 10,
-  },
-
-  overviewTextContainer: {
-    flex: 1,
-  },
-
-  overviewTitle: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#272B30",
-  },
-
-  overviewSubtitle: {
-    marginTop: 3,
-    fontSize: 8.5,
-    color: "#888E95",
-  },
-
-  recommendationHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  characterCounter: {
-    marginBottom: 10,
-    fontSize: 8.5,
-    color: "#A0A5AA",
-  },
-
-  recommendationInput: {
-    minHeight: 132,
-    backgroundColor: "#F4F4F6",
-    borderRadius: 9,
-    paddingHorizontal: 13,
-    paddingTop: 13,
-    paddingBottom: 13,
-    fontSize: 11,
-    lineHeight: 17,
-    color: "#292D31",
-    marginBottom: 17,
-  },
-
-  recommendationInputDisabled: {
-    opacity: 0.55,
-    backgroundColor: "#ECEEF0",
-  },
-
-  submitButtonWrapper: {
-    width: "100%",
-  },
-
-  disabledButton: {
-    opacity: 0.7,
-  },
-
-  submitButton: {
-    height: 50,
-    borderRadius: 999,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-  },
-
-  submitButtonText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#25282B",
-  },
-
-  actionsRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 10,
-  },
-
-  secondaryButton: {
-    flex: 1,
-    height: 46,
-    borderRadius: 999,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "#FFFFFF",
-  },
-
-  reviewedButton: {
-    borderWidth: 1,
-    borderColor: "#9DDBA8",
-  },
-
-  reviewedButtonActive: {
-    backgroundColor: "#EAF8EC",
-  },
-
-  reviewedButtonText: {
-    fontSize: 11,
-    fontWeight: "500",
-    color: "#47B15C",
-  },
-
-  reviewedButtonTextActive: {
-    fontWeight: "700",
-  },
-
-  disabledSecondaryButton: {
-    opacity: 0.45,
-  },
-
-  disabledSecondaryText: {
-    color: "#8E959C",
-  },
-
-  closeButton: {
-    borderWidth: 1,
-    borderColor: "#FF5B61",
-  },
-
-  closeButtonText: {
-    fontSize: 11,
-    fontWeight: "500",
-    color: "#F13940",
-  },
-
-  closedButtonActive: {
-    backgroundColor: "#F1F2F3",
-    borderColor: "#B7BCC2",
-  },
-
-  closedButtonTextActive: {
-    color: "#747B83",
-    fontWeight: "700",
-  },
-
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(24, 30, 35, 0.56)",
-    paddingHorizontal: 22,
-  },
-
-  modalCard: {
-    width: "100%",
-    maxWidth: 390,
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 26,
-    paddingHorizontal: 20,
-    paddingTop: 25,
-    paddingBottom: 20,
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: 12,
+    safeArea: {
+      flex: 1,
+      backgroundColor:
+        "#FFFFFF",
     },
-    shadowOpacity: 0.2,
-    shadowRadius: 24,
-    elevation: 14,
-  },
 
-  modalIcon: {
-    position: "relative",
-    width: 91,
-    height: 91,
-    borderRadius: 46,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 14,
-  },
+    background: {
+      flex: 1,
+    },
 
-  modalSuccessBadge: {
-    position: "absolute",
-    right: 1,
-    bottom: 3,
-    width: 29,
-    height: 29,
-    borderRadius: 15,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#4DBA63",
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-  },
+    scrollContent: {
+      paddingHorizontal: 18,
+      paddingTop: 8,
+      paddingBottom: 28,
+    },
 
-  modalStatusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    borderRadius: 999,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    marginBottom: 12,
-  },
+    header: {
+      height: 52,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+    },
 
-  modalStatusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
+    errorHeader: {
+      height: 60,
+      paddingHorizontal: 18,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent:
+        "space-between",
+    },
 
-  modalStatusText: {
-    fontSize: 9,
-    fontWeight: "700",
-  },
+    backButton: {
+      width: 40,
+      height: 40,
+      justifyContent: "center",
+      alignItems: "flex-start",
+    },
 
-  modalTitle: {
-    maxWidth: 310,
-    fontSize: 21,
-    lineHeight: 28,
-    fontWeight: "700",
-    color: "#22262A",
-    textAlign: "center",
-  },
+    headerTitle: {
+      fontSize: 17,
+      fontWeight: "600",
+      color: "#1F2328",
+    },
 
-  modalDescription: {
-    maxWidth: 320,
-    marginTop: 9,
-    fontSize: 11,
-    lineHeight: 17,
-    color: "#858B92",
-    textAlign: "center",
-  },
+    headerPlaceholder: {
+      width: 40,
+    },
 
-  modalInfoCard: {
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "flex-start",
-    backgroundColor: "#EEF6FF",
-    borderRadius: 13,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginTop: 19,
-  },
+    headerRefresh: {
+      width: 40,
+      height: 40,
+      justifyContent: "center",
+      alignItems: "flex-end",
+    },
 
-  modalInfoIcon: {
-    width: 37,
-    height: 37,
-    borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    marginRight: 9,
-  },
+    centerState: {
+      flex: 1,
+      backgroundColor: "#FFFFFF",
+      justifyContent: "center",
+      alignItems: "center",
+      paddingHorizontal: 28,
+    },
 
-  modalInfoText: {
-    flex: 1,
-    fontSize: 9.2,
-    lineHeight: 14,
-    color: "#668098",
-  },
+    stateTitle: {
+      marginTop: 14,
+      fontSize: 17,
+      fontWeight: "700",
+      color: "#25282B",
+      textAlign: "center",
+    },
 
-  modalWarningCard: {
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    backgroundColor: "#FFF0F1",
-    borderRadius: 13,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginTop: 19,
-  },
+    stateMessage: {
+      marginTop: 8,
+      fontSize: 12,
+      lineHeight: 18,
+      color: "#7A8087",
+      textAlign: "center",
+    },
 
-  modalWarningText: {
-    flex: 1,
-    fontSize: 9.2,
-    lineHeight: 14,
-    color: "#956166",
-  },
+    retryButton: {
+      marginTop: 20,
+      borderRadius: 999,
+      backgroundColor: "#6799C2",
+      paddingHorizontal: 24,
+      paddingVertical: 12,
+    },
 
-  modalActions: {
-    width: "100%",
-    flexDirection: "row",
-    gap: 9,
-    marginTop: 21,
-  },
+    retryButtonText: {
+      color: "#FFFFFF",
+      fontSize: 12,
+      fontWeight: "700",
+    },
 
-  modalSingleAction: {
-    justifyContent: "center",
-  },
+    childCard: {
+      position: "relative",
+      minHeight: 76,
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: "#FFFFFF",
+      borderRadius: 19,
+      borderWidth: 1,
+      borderColor: "#F0DFE2",
+      paddingHorizontal: 12,
+      overflow: "hidden",
+      marginBottom: 14,
+    },
 
-  modalSecondaryButton: {
-    flex: 1,
-    height: 52,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#DDE3E7",
-    borderRadius: 999,
-  },
+    childDecorationLeft: {
+      position: "absolute",
+      left: -20,
+      top: -15,
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+      backgroundColor: "#FFF0F1",
+    },
 
-  modalSecondaryButtonText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#6A7279",
-  },
+    childDecorationRight: {
+      position: "absolute",
+      right: -14,
+      bottom: -22,
+      width: 70,
+      height: 70,
+      borderRadius: 35,
+      backgroundColor: "#FFF0F1",
+    },
 
-  modalPrimaryWrapper: {
-    flex: 1,
-  },
+    childAvatarWrapper: {
+      width: 46,
+      height: 46,
+      borderRadius: 23,
+      backgroundColor: "#FFF1EB",
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: "#F3DED6",
+      marginRight: 10,
+      zIndex: 2,
+    },
 
-  modalPrimaryFullWidth: {
-    flex: 0,
-    width: "100%",
-  },
+    childAvatar: {
+      width: "100%",
+      height: "100%",
+    },
 
-  modalPrimaryButton: {
-    height: 52,
-    borderRadius: 999,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 7,
-  },
+    childInformation: {
+      flex: 1,
+      zIndex: 2,
+    },
 
-  modalPrimaryButtonText: {
-    fontSize: 12.5,
-    fontWeight: "700",
-    color: "#171A1E",
-  },
+    childName: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: "#24272A",
+    },
 
-  modalDestructiveButton: {
-    height: 52,
-    borderRadius: 999,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 7,
-    backgroundColor: "#EB656C",
-  },
+    childDetails: {
+      marginTop: 3,
+      fontSize: 9.5,
+      color: "#6E737A",
+    },
 
-  modalDestructiveText: {
-    fontSize: 12.5,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-});
+    statusBadge: {
+      zIndex: 2,
+      alignSelf: "flex-start",
+      marginTop: 10,
+      backgroundColor: "#FFF0DE",
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      paddingVertical: 5,
+    },
+
+    statusBadgeText: {
+      fontSize: 8,
+      fontWeight: "500",
+      color: "#E49A43",
+    },
+
+    reviewedBadge: {
+      backgroundColor: "#E9F9EC",
+    },
+
+    reviewedBadgeText: {
+      color: "#42A45D",
+    },
+
+    closedBadge: {
+      backgroundColor: "#ECEFF2",
+    },
+
+    closedBadgeText: {
+      color: "#737A83",
+    },
+
+    summaryRow: {
+      flexDirection: "row",
+      gap: 9,
+      marginBottom: 17,
+    },
+
+    summaryCard: {
+      flex: 1,
+      minHeight: 125,
+      borderRadius: 10,
+      padding: 13,
+    },
+
+    trendCard: {
+      backgroundColor: "#EAF6EE",
+    },
+
+    entriesCard: {
+      backgroundColor: "#FFE7E8",
+    },
+
+    summaryLabel: {
+      marginTop: 12,
+      fontSize: 14,
+      fontWeight: "700",
+      color: "#202522",
+      textTransform: "capitalize",
+    },
+
+    summaryDescription: {
+      marginTop: 15,
+      fontSize: 10,
+      lineHeight: 14,
+      color: "#3D4740",
+    },
+
+    entriesLabel: {
+      fontSize: 12,
+      color: "#34373A",
+    },
+
+    entriesValue: {
+      marginTop: 4,
+      fontSize: 15,
+      fontWeight: "700",
+      color: "#1F2225",
+    },
+
+    lastAnalysisLabel: {
+      marginTop: 20,
+      fontSize: 11,
+      color: "#5B5E62",
+    },
+
+    lastAnalysisValue: {
+      marginTop: 5,
+      fontSize: 13,
+      fontWeight: "700",
+      color: "#25282B",
+    },
+
+    sectionTitle: {
+      marginBottom: 10,
+      fontSize: 14,
+      fontWeight: "500",
+      color: "#30343A",
+    },
+
+    analysisTextCard: {
+      position: "relative",
+      minHeight: 95,
+      justifyContent: "center",
+      backgroundColor: "#F5F5F7",
+      borderLeftWidth: 3,
+      borderLeftColor: "#F5BAC0",
+      paddingHorizontal: 15,
+      paddingVertical: 14,
+      marginBottom: 15,
+    },
+
+    quoteIcon: {
+      position: "absolute",
+      top: 2,
+      left: 7,
+      fontSize: 38,
+      color: "#F4D1D4",
+    },
+
+    analysisText: {
+      fontSize: 10.5,
+      lineHeight: 17,
+      fontStyle: "italic",
+      color: "#4D5156",
+    },
+
+    emotionCard: {
+      backgroundColor: "#FFFFFF",
+      borderLeftWidth: 3,
+      borderLeftColor: "#F4B8BD",
+      borderRadius: 6,
+      paddingHorizontal: 11,
+      paddingVertical: 11,
+      marginBottom: 15,
+    },
+
+    emotionMainRow: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    emotionIconWrapper: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      justifyContent: "center",
+      alignItems: "center",
+      marginRight: 8,
+    },
+
+    emotionTextContainer: {
+      flex: 1,
+    },
+
+    emotionSmallLabel: {
+      fontSize: 8.5,
+      color: "#676D73",
+    },
+
+    emotionValue: {
+      marginTop: 2,
+      fontSize: 14,
+      fontWeight: "700",
+      color: "#25282B",
+      textTransform: "capitalize",
+    },
+
+    confidenceBadge: {
+      minWidth: 66,
+      minHeight: 52,
+      borderRadius: 26,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: "#EEF6FF",
+      paddingHorizontal: 8,
+    },
+
+    confidenceValue: {
+      fontSize: 14,
+      fontWeight: "800",
+      color: "#3976A4",
+    },
+
+    confidenceLabel: {
+      marginTop: 1,
+      fontSize: 7,
+      color: "#718096",
+    },
+
+    tagsContainer: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+      marginTop: 9,
+    },
+
+    emotionTag: {
+      backgroundColor: "#FFF0F1",
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+
+    emotionTagText: {
+      fontSize: 8,
+      color: "#F08C96",
+    },
+
+    aiSummaryCard: {
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      marginBottom: 15,
+    },
+
+    aiTitleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginBottom: 8,
+    },
+
+    aiTitle: {
+      fontSize: 10,
+      fontWeight: "700",
+      color: "#252A30",
+    },
+
+    aiSummaryText: {
+      fontSize: 10,
+      lineHeight: 15,
+      color: "#343A40",
+    },
+
+    priorityBadge: {
+      alignSelf: "flex-start",
+      marginTop: 10,
+      backgroundColor: "rgba(255,255,255,0.72)",
+      borderRadius: 999,
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+    },
+
+    priorityText: {
+      fontSize: 8.5,
+      fontWeight: "700",
+      color: "#7B5960",
+    },
+
+    overviewCard: {
+      minHeight: 63,
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: "#F3F3F4",
+      borderRadius: 8,
+      paddingHorizontal: 11,
+      marginBottom: 18,
+    },
+
+    overviewIcon: {
+      width: 37,
+      height: 37,
+      borderRadius: 7,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: "#FFFFFF",
+      marginRight: 10,
+    },
+
+    overviewTextContainer: {
+      flex: 1,
+    },
+
+    overviewTitle: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: "#272B30",
+    },
+
+    overviewSubtitle: {
+      marginTop: 3,
+      fontSize: 8.5,
+      color: "#888E95",
+    },
+
+    recommendationHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+
+    characterCounter: {
+      marginBottom: 10,
+      fontSize: 8.5,
+      color: "#A0A5AA",
+    },
+
+    recommendationInput: {
+      minHeight: 132,
+      backgroundColor: "#F4F4F6",
+      borderRadius: 9,
+      paddingHorizontal: 13,
+      paddingTop: 13,
+      paddingBottom: 13,
+      fontSize: 11,
+      lineHeight: 17,
+      color: "#292D31",
+      marginBottom: 17,
+    },
+
+    recommendationInputDisabled: {
+      opacity: 0.55,
+      backgroundColor: "#ECEEF0",
+    },
+
+    submitButtonWrapper: {
+      width: "100%",
+    },
+
+    disabledButton: {
+      opacity: 0.55,
+    },
+
+    submitButton: {
+      height: 50,
+      borderRadius: 999,
+      flexDirection: "row",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: 8,
+    },
+
+    submitButtonText: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: "#25282B",
+    },
+
+    reviewedButton: {
+      height: 46,
+      marginTop: 10,
+      borderRadius: 999,
+      flexDirection: "row",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: 6,
+      backgroundColor: "#FFFFFF",
+      borderWidth: 1,
+      borderColor: "#9DDBA8",
+    },
+
+    reviewedButtonActive: {
+      backgroundColor: "#EAF8EC",
+    },
+
+    reviewedButtonText: {
+      fontSize: 11,
+      fontWeight: "500",
+      color: "#47B15C",
+    },
+
+    reviewedButtonTextActive: {
+      fontWeight: "700",
+      color: "#3C9A51",
+    },
+
+    backendNote: {
+      marginTop: 10,
+      fontSize: 8.5,
+      lineHeight: 13,
+      color: "#92979D",
+      textAlign: "center",
+    },
+
+    modalOverlay: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor:
+        "rgba(24, 30, 35, 0.56)",
+      paddingHorizontal: 22,
+    },
+
+    modalCard: {
+      width: "100%",
+      maxWidth: 390,
+      alignItems: "center",
+      backgroundColor: "#FFFFFF",
+      borderRadius: 26,
+      paddingHorizontal: 20,
+      paddingTop: 25,
+      paddingBottom: 20,
+    },
+
+    modalIcon: {
+      width: 86,
+      height: 86,
+      borderRadius: 43,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: "#EEF6FF",
+      marginBottom: 14,
+    },
+
+    modalTitle: {
+      fontSize: 21,
+      lineHeight: 28,
+      fontWeight: "700",
+      color: "#22262A",
+      textAlign: "center",
+    },
+
+    modalDescription: {
+      marginTop: 9,
+      fontSize: 11,
+      lineHeight: 17,
+      color: "#858B92",
+      textAlign: "center",
+    },
+
+    modalButton: {
+      width: "100%",
+      height: 50,
+      marginTop: 21,
+      borderRadius: 999,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: "#A8D4F7",
+    },
+
+    modalButtonText: {
+      fontSize: 12.5,
+      fontWeight: "700",
+      color: "#171A1E",
+    },
+  });

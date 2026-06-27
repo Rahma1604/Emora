@@ -5,26 +5,53 @@ const ChildSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, "Child name is required"],
+      required: [
+        true,
+        "Child name is required",
+      ],
       trim: true,
-      minlength: [1, "Child name is required"],
-      maxlength: [30, "Child name cannot exceed 30 characters"],
+      minlength: [
+        1,
+        "Child name is required",
+      ],
+      maxlength: [
+        30,
+        "Child name cannot exceed 30 characters",
+      ],
     },
 
     age: {
       type: Number,
-      required: [true, "Child age is required"],
-      min: [1, "Child age must be at least 1"],
-      max: [18, "Child age cannot exceed 18"],
+      required: [
+        true,
+        "Child age is required",
+      ],
+      min: [
+        1,
+        "Child age must be at least 1",
+      ],
+      max: [
+        18,
+        "Child age cannot exceed 18",
+      ],
     },
 
     gender: {
       type: String,
-      required: [true, "Child gender is required"],
+      required: [
+        true,
+        "Child gender is required",
+      ],
       enum: {
-        values: ["male", "female"],
-        message: "Gender must be male or female",
+        values: [
+          "male",
+          "female",
+        ],
+        message:
+          "Gender must be male or female",
       },
+      lowercase: true,
+      trim: true,
     },
 
     notes: {
@@ -38,9 +65,14 @@ const ChildSchema = new mongoose.Schema(
     },
 
     parentId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type:
+        mongoose.Schema.Types
+          .ObjectId,
       ref: "User",
-      required: true,
+      required: [
+        true,
+        "Parent ID is required",
+      ],
       index: true,
     },
   },
@@ -49,5 +81,19 @@ const ChildSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("Child", ChildSchema);
+/*
+  يساعد في جلب أطفال كل Parent
+  بترتيب الأحدث.
+*/
+ChildSchema.index({
+  parentId: 1,
+  createdAt: -1,
+});
+
+module.exports =
+  mongoose.models.Child ||
+  mongoose.model(
+    "Child",
+    ChildSchema
+  );
 

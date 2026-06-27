@@ -1,163 +1,277 @@
-
-<<<<<<< Updated upstream
-const isAdmin = (req, res, next) => {
-  if (req.user && req.user.role === 'admin') {
-    return next();
-  }
-  return res.status(403).json({ message: 'Access denied. Admins only.' });
-};
-
-const checkToken = async(req, res, next) => {
-  let token=req.header('x-auth-token');
-  if(req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-    token=req.headers.authorization.split(' ')[1];
-  }
-  if (!token) {
-    return res.status(401).json({ message: 'Please login first' });
-  }
-  
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select('-password');
-    if (!req.user) {
-      return res.status(401).json({ message: 'User account not found' });
-      }
-    return next();
-  } catch (error) {
-    return res.status(401).json({ message: 'Invalid or expired token.' });
-  }
-};
-module.exports = { checkToken, isAdmin };
-=======
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
+/* =====================================================
+   GET TOKEN FROM REQUEST
+===================================================== */
+
 const getTokenFromRequest = (req) => {
   const authorizationHeader =
-    req.headers.authorization;
+    req.headers.authorization || "";
 
   if (
-    authorizationHeader &&
-    authorizationHeader.startsWith("Bearer ")
+    authorizationHeader.startsWith(
+      "Bearer "
+    )
   ) {
-    return authorizationHeader.split(" ")[1];
+    return authorizationHeader
+      .slice(7)
+      .trim();
   }
 
-  return req.header("x-auth-token") || null;
-};
+  const customToken =
+    req.headers["x-auth-token"];
 
-const checkToken = async (req, res, next) => {
-  try {
-    const token = getTokenFromRequest(req);
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "Please login first",
-      });
-    }
-
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET
-    );
-
-    const user = await User.findById(
-      decoded.id
-    ).select("-password");
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "The user associated with this token was not found",
-      });
-    }
-
-    req.user = user;
-
-    next();
-  } catch (error) {
-    console.error(
-      "AUTHENTICATION ERROR:",
-      error.message
-    );
-
-    return res.status(401).json({
-      success: false,
-      message: "Invalid or expired token",
-    });
+  if (customToken) {
+    return String(customToken).trim();
   }
+
+  return "";
 };
 
-const checkDoctorVerificationToken = async (
+/* =====================================================
+   CHECK NORMAL LOGIN TOKEN
+===================================================== */
+
+const checkToken = async (
   req,
   res,
   next
 ) => {
   try {
-    const token = getTokenFromRequest(req);
+    const token =
+      getTokenFromRequest(req);
 
     if (!token) {
       return res.status(401).json({
         success: false,
-        message:
-          "Doctor verification session is missing",
+        msg: "No authentication token provided",
       });
     }
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET
-    );
+    if (!process.env.JWT_SECRET) {
+      console.error(
+        "JWT_SECRET is missing from .env"
+      );
 
-    if (
-      decoded.purpose !==
-      "doctor_verification"
-    ) {
+      return res.status(500).json({
+        success: false,
+        msg: "Server authentication configuration is missing",
+      });
+    }
+
+    let decoded;
+
+    try {
+      decoded = jwt.verify(
+        token,
+        process.env.JWT_SECRET
+      );
+    } catch (error) {
+      if (
+        error.name ===
+        "TokenExpiredError"
+      ) {
+        return res.status(401).json({
+          success: false,
+          msg: "Session expired. Please login again.",
+        });
+      }
+
       return res.status(401).json({
         success: false,
-        message:
-          "Invalid doctor verification token",
+        msg: "Invalid authentication token",
       });
     }
 
-    const doctor = await User.findById(
-      decoded.id
-    ).select("-password");
+    const userId =
+      decoded.id ||
+      decoded.userId ||
+      decoded._id;
 
-    if (
-      !doctor ||
-      doctor.role !== "doctor"
-    ) {
-      return res.status(403).json({
+    if (!userId) {
+      return res.status(401).json({
         success: false,
-        message:
-          "Doctor verification access only",
+        msg: "Invalid token payload",
       });
     }
 
-    req.user = doctor;
-    req.verificationToken = token;
+    const user =
+      await User.findById(userId).select(
+        "-password -verificationCode -resetPasswordToken -resetPasswordExpires"
+      );
 
-    next();
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        msg: "User associated with this token was not found",
+      });
+    }
+
+    req.user = user;
+    req.token = token;
+
+    return next();
   } catch (error) {
     console.error(
-      "DOCTOR VERIFICATION TOKEN ERROR:",
-      error.message
+      "AUTH MIDDLEWARE ERROR:",
+      error
     );
 
-    return res.status(401).json({
+    return res.status(500).json({
       success: false,
-      message:
-        "Doctor verification session has expired. Please login again.",
+      msg: "Authentication failed",
     });
   }
 };
 
-module.exports = {
-  checkToken,
-  checkDoctorVerificationToken,
+/* =====================================================
+   CHECK ADMIN ROLE
+===================================================== */
+
+const isAdmin = (
+  req,
+  res,
+  next
+) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      msg: "Authentication required",
+    });
+  }
+
+  if (req.user.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      msg: "Admin access only",
+    });
+  }
+
+  return next();
 };
 
->>>>>>> Stashed changes
+/* =====================================================
+   CHECK DOCTOR VERIFICATION TOKEN
+===================================================== */
+
+const checkDoctorVerificationToken =
+  async (
+    req,
+    res,
+    next
+  ) => {
+    try {
+      const token =
+        getTokenFromRequest(req);
+
+      if (!token) {
+        return res.status(401).json({
+          success: false,
+          msg: "Doctor verification token is required",
+        });
+      }
+
+      if (!process.env.JWT_SECRET) {
+        console.error(
+          "JWT_SECRET is missing from .env"
+        );
+
+        return res.status(500).json({
+          success: false,
+          msg: "Server authentication configuration is missing",
+        });
+      }
+
+      let decoded;
+
+      try {
+        decoded = jwt.verify(
+          token,
+          process.env.JWT_SECRET
+        );
+      } catch (error) {
+        if (
+          error.name ===
+          "TokenExpiredError"
+        ) {
+          return res.status(401).json({
+            success: false,
+            msg: "Doctor verification session expired",
+          });
+        }
+
+        return res.status(401).json({
+          success: false,
+          msg: "Invalid doctor verification token",
+        });
+      }
+
+      if (
+        decoded.purpose !==
+        "doctor_verification"
+      ) {
+        return res.status(401).json({
+          success: false,
+          msg: "Invalid verification token purpose",
+        });
+      }
+
+      const doctorId =
+        decoded.id ||
+        decoded.userId ||
+        decoded._id;
+
+      if (!doctorId) {
+        return res.status(401).json({
+          success: false,
+          msg: "Invalid doctor verification token",
+        });
+      }
+
+      const doctor =
+        await User.findById(
+          doctorId
+        ).select(
+          "-password -verificationCode -resetPasswordToken -resetPasswordExpires"
+        );
+
+      if (!doctor) {
+        return res.status(404).json({
+          success: false,
+          msg: "Doctor account was not found",
+        });
+      }
+
+      if (
+        doctor.role !==
+        "doctor"
+      ) {
+        return res.status(403).json({
+          success: false,
+          msg: "Doctor access only",
+        });
+      }
+
+      req.user = doctor;
+      req.token = token;
+
+      return next();
+    } catch (error) {
+      console.error(
+        "DOCTOR VERIFICATION MIDDLEWARE ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        msg: "Doctor verification failed",
+      });
+    }
+  };
+
+module.exports = {
+  checkToken,
+  isAdmin,
+  checkDoctorVerificationToken,
+};
