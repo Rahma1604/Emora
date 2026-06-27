@@ -3,18 +3,11 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
-
 const User = require("../models/User");
-
 const {
-  uploadProfile,
-  uploadDoctorDocs,
-} = require("../config/cloudinary");
+  uploadProfile,uploadDoctorDocs,} = require("../config/cloudinary");
 
-const {
-  checkToken,
-  checkDoctorVerificationToken,
-} = require("../middleware/authMiddleware");
+const { checkToken,checkDoctorVerificationToken,} = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
@@ -23,8 +16,7 @@ const router = express.Router();
 ===================================================== */
 
 const EMAIL_USER =
-  process.env.EMAIL_USER ||
-  "202227086@std.sci.cu.edu.eg";
+  process.env.EMAIL_USER ||"202227086@std.sci.cu.edu.eg";
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -2484,12 +2476,8 @@ router.post(
           newPassword,
           10
         );
-
-      user.resetPasswordToken =
-        undefined;
-
-      user.resetPasswordExpires =
-        undefined;
+      user.resetPasswordToken =undefined;
+      user.resetPasswordExpires =undefined;
 
       await user.save();
 
@@ -2508,11 +2496,60 @@ router.post(
         success: false,
         msg:
           error.message ||
-          "Password reset failed",
+          "Password reset failed", });
+    }}
+);
+
+router.put("/change-password", checkToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+    const userId = req.user._id;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ success: false, message: "جميع الحقول مطلوبة" });
+    }
+
+    // 2. التحقق من مطابقة الجديدة مع التأكيد
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ success: false, message: "كلمة المرور الجديدة غير متطابقة" });
+    }
+
+    // 3. التحقق من قوة كلمة المرور (الشروط الأربعة في الصورة)
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+    if (!passwordRegex.test(newPassword)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "كلمة المرور يجب أن تحتوي على 8 أحرف على الأقل، حرف كبير، حرف صغير، ورقم" 
       });
     }
+
+    // 4. جلب المستخدم من قاعدة البيانات
+    const user = await User.findById(userId);
+    
+    // 5. التحقق من صحة كلمة المرور الحالية
+    const isCurrentMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isCurrentMatch) {
+      return res.status(400).json({ success: false, message: "كلمة المرور الحالية غير صحيحة" });
+    }
+
+    // 6. التحقق من أن كلمة المرور الجديدة ليست هي نفسها القديمة (إضافة أمنية)
+    const isSameAsOld = await bcrypt.compare(newPassword, user.password);
+    if (isSameAsOld) {
+      return res.status(400).json({ success: false, message: "لا يمكن استخدام كلمة المرور القديمة ككلمة مرور جديدة" });
+    }
+
+    // 7. تشفير وحفظ كلمة المرور الجديدة
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    await user.save();
+
+    return res.status(200).json({ success: true, message: "تم تغيير كلمة المرور بنجاح" });
+
+  } catch (error) {
+    console.error("Change Password Error:", error);
+    return res.status(500).json({ success: false, message: "خطأ في السيرفر أثناء تحديث كلمة المرور" });
   }
-);
+});
 
 module.exports = router;
 
