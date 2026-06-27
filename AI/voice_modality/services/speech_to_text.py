@@ -7,7 +7,6 @@ def audio_to_text(audio_path):
 
     result = whisper_model.transcribe(
         audio_path,
-        language="ar",
         task="transcribe",
         fp16=False
     )
