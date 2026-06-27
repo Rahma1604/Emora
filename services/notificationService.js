@@ -1,22 +1,52 @@
-const Notification = require('../models/Notification');
-const sendNotification = async (data) => {
-    try {
-        const newNotification = await Notification.create({
-            doctorId: data.doctorId,
-            childId: data.childId,
-            title: data.title,
-            message: data.message,
-            type: data.type
-        });
-      // هنا يتم الإرسال الفوري عبر Socket.io
-        if (global.io) {
-            // نستخدم .toString() لضمان مطابقة الـ ID للـ Room المشترك فيها الطبيب
-            global.io.to(data.doctorId.toString()).emit('new-notification', newNotification);
-        }
-        return newNotification;
-    } catch (err) {
-        console.error("Error creating notification:", err);
+const Notification = require("../models/Notification");
+
+const sendNotification = async (data = {}) => {
+  try {
+    const {
+      doctorId,
+      childId,
+      caseId,
+      title,
+      message,
+      type,
+    } = data;
+
+    if (!doctorId) {
+      throw new Error("Doctor ID is required to create a notification");
     }
+
+    if (!childId) {
+      throw new Error("Child ID is required to create a notification");
+    }
+
+    if (!title || !message) {
+      throw new Error("Notification title and message are required");
+    }
+
+    if (!type) {
+      throw new Error("Notification type is required");
+    }
+
+    const newNotification = await Notification.create({
+      doctorId,
+      childId,
+      caseId: caseId || null,
+      title,
+      message,
+      type,
+    });
+
+    if (global.io && doctorId) {
+      global.io
+        .to(doctorId.toString())
+        .emit("new-notification", newNotification);
+    }
+
+    return newNotification;
+  } catch (error) {
+    console.error("Error creating doctor notification:", error);
+    throw error;
+  }
 };
 
 module.exports = { sendNotification };

@@ -10,6 +10,7 @@ const Child = require("../models/Child");
 const Case = require("../models/Case");
 const Entry = require("../models/entry");
 const Notification = require("../models/NotificationP");
+const User = require("../models/User");
 
 const {
   updateCaseWithAIResults,
@@ -36,27 +37,128 @@ const upload = multer({
   },
 ]);
 
+/*
+  اختيار أقل دكتور في عدد الأطفال المسندين إليه.
+  ولو عدد الأطفال متساوٍ، يتم اختيار الأقل في الحالات النشطة.
+*/
+const findAvailableDoctor =
+  async () => {
+    const doctors =
+      await User.find({
+        role: "doctor",
+        verificationStatus:
+          "approved",
+        isVerified: true,
+      }).select(
+        "_id fullName"
+      );
+
+    if (
+      !doctors ||
+      doctors.length === 0
+    ) {
+      return null;
+    }
+
+    const doctorsWithLoad =
+      await Promise.all(
+        doctors.map(
+          async (doctor) => {
+            const [
+              assignedChildren,
+              activeCases,
+            ] =
+              await Promise.all([
+                Child.countDocuments({
+                  doctorId:
+                    doctor._id,
+                }),
+
+                Case.countDocuments({
+                  doctorId:
+                    doctor._id,
+
+                  status: {
+                    $in: [
+                      "pending",
+                      "reviewed",
+                    ],
+                  },
+                }),
+              ]);
+
+            return {
+              doctor,
+              assignedChildren,
+              activeCases,
+            };
+          }
+        )
+      );
+
+    doctorsWithLoad.sort(
+      (
+        firstDoctor,
+        secondDoctor
+      ) => {
+        if (
+          firstDoctor.assignedChildren !==
+          secondDoctor.assignedChildren
+        ) {
+          return (
+            firstDoctor.assignedChildren -
+            secondDoctor.assignedChildren
+          );
+        }
+
+        return (
+          firstDoctor.activeCases -
+          secondDoctor.activeCases
+        );
+      }
+    );
+
+    return doctorsWithLoad[0]
+      .doctor;
+  };
+
 /* =========================
    Get All Parent Children
    GET /api/children/all
 ========================= */
 
-router.get("/all", checkToken, async (req, res) => {
-  try {
-    const children = await Child.find({
-      parentId: req.user._id,
-    });
+router.get(
+  "/all",
+  checkToken,
+  async (req, res) => {
+    try {
+      const children =
+        await Child.find({
+          parentId:
+            req.user._id,
+        });
 
-    return res.status(200).json(children);
-  } catch (err) {
-    console.error("GET CHILDREN ERROR:", err);
+      return res
+        .status(200)
+        .json(children);
+    } catch (err) {
+      console.error(
+        "GET CHILDREN ERROR:",
+        err
+      );
 
-    return res.status(500).json({
-      error: "Failed to fetch children",
-      message: err.message,
-    });
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to fetch children",
+
+          message:
+            err.message,
+        });
+    }
   }
-});
+);
 
 /* =========================
    Get Child Overview
@@ -68,271 +170,434 @@ router.get(
   checkToken,
   async (req, res) => {
     try {
-      const child = await Child.findOne({
-        _id: req.params.childId,
-        parentId: req.user._id,
-      }).lean();
+      const child =
+        await Child.findOne({
+          _id:
+            req.params.childId,
+
+          parentId:
+            req.user._id,
+        }).lean();
 
       if (!child) {
-        return res.status(404).json({
-          message: "Child not found",
-        });
+        return res
+          .status(404)
+          .json({
+            message:
+              "Child not found",
+          });
       }
 
-      const latestCase = await Case.findOne({
-        childId: child._id,
-      })
-        .populate(
-          "doctorId",
-          "fullName specialization profilePic isVerified"
-        )
-        .sort({
-          lastAnalysisDate: -1,
-          createdAt: -1,
+      const latestCase =
+        await Case.findOne({
+          childId:
+            child._id,
         })
-        .lean();
+          .populate(
+            "doctorId",
+            "fullName specialization profilePic isVerified"
+          )
+          .sort({
+            lastAnalysisDate: -1,
+            createdAt: -1,
+          })
+          .lean();
 
       if (!latestCase) {
-        return res.status(200).json({
-          childInfo: child,
-          caseData: null,
-          recentEntries: [],
-        });
+        return res
+          .status(200)
+          .json({
+            childInfo:
+              child,
+
+            caseData:
+              null,
+
+            recentEntries:
+              [],
+          });
       }
 
       const caseStatus =
-        latestCase.status || "pending";
+        latestCase.status ||
+        "pending";
 
       const dominantEmotion =
-        latestCase.dominantEmotion || "Unknown";
+        latestCase.dominantEmotion ||
+        "Unknown";
 
       const confidence =
-        Number(latestCase.emotionPercentage) || 0;
+        Number(
+          latestCase.emotionPercentage
+        ) || 0;
 
-      const textAnalyses = Array.isArray(
-        latestCase.textAnalyses
-      )
-        ? latestCase.textAnalyses
-        : [];
+      const textAnalyses =
+        Array.isArray(
+          latestCase.textAnalyses
+        )
+          ? latestCase.textAnalyses
+          : [];
 
-      const drawings = Array.isArray(
-        latestCase.drawings
-      )
-        ? latestCase.drawings
-        : [];
+      const drawings =
+        Array.isArray(
+          latestCase.drawings
+        )
+          ? latestCase.drawings
+          : [];
 
-      const textEntries = textAnalyses.map(
-        (entry, index) => ({
-          id:
-            entry?._id?.toString?.() ||
-            `text-${latestCase._id}-${index}`,
+      const audioAnalyses =
+        Array.isArray(
+          latestCase.audioAnalyses
+        )
+          ? latestCase.audioAnalyses
+          : [];
 
-          caseId:
-            latestCase._id?.toString?.() || "",
+      const textEntries =
+        textAnalyses.map(
+          (
+            entry,
+            index
+          ) => ({
+            id:
+              entry?._id?.toString?.() ||
+              `text-${latestCase._id}-${index}`,
 
-          date:
-            entry?.createdAt ||
-            latestCase.lastAnalysisDate ||
-            latestCase.createdAt,
+            caseId:
+              latestCase._id?.toString?.() ||
+              "",
 
-          type: "Text Entry",
+            date:
+              entry?.createdAt ||
+              latestCase.lastAnalysisDate ||
+              latestCase.createdAt,
 
-          emotion:
-            typeof entry?.emotion === "string" &&
-            entry.emotion.trim()
-              ? entry.emotion
-              : dominantEmotion,
+            type:
+              "Text Entry",
 
-          description:
-            (typeof entry?.analysisResult ===
-              "string" &&
-            entry.analysisResult.trim()
-              ? entry.analysisResult
-              : "") ||
-            (typeof entry?.content === "string" &&
-            entry.content.trim()
-              ? entry.content
-              : "") ||
-            "Text analysis entry",
+            emotion:
+              typeof entry?.emotion ===
+                "string" &&
+              entry.emotion.trim()
+                ? entry.emotion
+                : dominantEmotion,
 
-          status: caseStatus,
+            description:
+              (
+                typeof entry?.analysisResult ===
+                  "string" &&
+                entry.analysisResult.trim()
+                  ? entry.analysisResult
+                  : ""
+              ) ||
+              (
+                typeof entry?.content ===
+                  "string" &&
+                entry.content.trim()
+                  ? entry.content
+                  : ""
+              ) ||
+              "Text analysis entry",
 
-          confidence:
-            Number(entry?.confidence) ||
-            confidence,
-        })
-      );
+            status:
+              caseStatus,
 
-      const drawingEntries = drawings.map(
-        (entry, index) => ({
-          id:
-            entry?._id?.toString?.() ||
-            `drawing-${latestCase._id}-${index}`,
+            confidence:
+              Number(
+                entry?.confidence
+              ) ||
+              confidence,
+          })
+        );
 
-          caseId:
-            latestCase._id?.toString?.() || "",
+      const drawingEntries =
+        drawings.map(
+          (
+            entry,
+            index
+          ) => ({
+            id:
+              entry?._id?.toString?.() ||
+              `drawing-${latestCase._id}-${index}`,
 
-          date:
-            entry?.createdAt ||
-            latestCase.lastAnalysisDate ||
-            latestCase.createdAt,
+            caseId:
+              latestCase._id?.toString?.() ||
+              "",
 
-          type: "Drawing Entry",
+            date:
+              entry?.createdAt ||
+              latestCase.lastAnalysisDate ||
+              latestCase.createdAt,
 
-          emotion:
-            typeof entry?.emotion === "string" &&
-            entry.emotion.trim()
-              ? entry.emotion
-              : dominantEmotion,
+            type:
+              "Drawing Entry",
 
-          description:
-            typeof entry?.analysisResult ===
-              "string" &&
-            entry.analysisResult.trim()
-              ? entry.analysisResult
-              : "Drawing analysis entry",
+            emotion:
+              typeof entry?.emotion ===
+                "string" &&
+              entry.emotion.trim()
+                ? entry.emotion
+                : dominantEmotion,
 
-          status: caseStatus,
+            description:
+              typeof entry?.analysisResult ===
+                "string" &&
+              entry.analysisResult.trim()
+                ? entry.analysisResult
+                : "Drawing analysis entry",
 
-          confidence:
-            Number(entry?.confidence) ||
-            confidence,
+            status:
+              caseStatus,
 
-          imageUrl:
-            typeof entry?.imageUrl === "string"
-              ? entry.imageUrl
-              : "",
-        })
-      );
+            confidence:
+              Number(
+                entry?.confidence
+              ) ||
+              confidence,
+
+            imageUrl:
+              typeof entry?.imageUrl ===
+                "string"
+                ? entry.imageUrl
+                : "",
+          })
+        );
+
+      const audioEntries =
+        audioAnalyses.map(
+          (
+            entry,
+            index
+          ) => ({
+            id:
+              entry?._id?.toString?.() ||
+              `audio-${latestCase._id}-${index}`,
+
+            caseId:
+              latestCase._id?.toString?.() ||
+              "",
+
+            date:
+              entry?.createdAt ||
+              latestCase.lastAnalysisDate ||
+              latestCase.createdAt,
+
+            type:
+              "Voice Entry",
+
+            emotion:
+              typeof entry?.emotion ===
+                "string" &&
+              entry.emotion.trim()
+                ? entry.emotion
+                : dominantEmotion,
+
+            description:
+              (
+                typeof entry?.analysisResult ===
+                  "string" &&
+                entry.analysisResult.trim()
+                  ? entry.analysisResult
+                  : ""
+              ) ||
+              "Voice analysis entry",
+
+            status:
+              caseStatus,
+
+            confidence:
+              Number(
+                entry?.confidence
+              ) ||
+              confidence,
+
+            audioUrl:
+              typeof entry?.audioUrl ===
+                "string"
+                ? entry.audioUrl
+                : "",
+          })
+        );
 
       const recentEntries = [
         ...textEntries,
         ...drawingEntries,
+        ...audioEntries,
       ]
-        .sort((firstEntry, secondEntry) => {
-          const firstDate =
-            new Date(firstEntry.date).getTime() ||
-            0;
+        .sort(
+          (
+            firstEntry,
+            secondEntry
+          ) => {
+            const firstDate =
+              new Date(
+                firstEntry.date
+              ).getTime() ||
+              0;
 
-          const secondDate =
-            new Date(secondEntry.date).getTime() ||
-            0;
+            const secondDate =
+              new Date(
+                secondEntry.date
+              ).getTime() ||
+              0;
 
-          return secondDate - firstDate;
-        })
+            return (
+              secondDate -
+              firstDate
+            );
+          }
+        )
         .slice(0, 5);
 
       const doctor =
         latestCase.doctorId &&
-        typeof latestCase.doctorId === "object"
+        typeof latestCase.doctorId ===
+          "object"
           ? {
-              _id: latestCase.doctorId._id,
+              _id:
+                latestCase
+                  .doctorId._id,
 
               fullName:
-                latestCase.doctorId.fullName,
+                latestCase
+                  .doctorId
+                  .fullName,
 
               specialization:
-                latestCase.doctorId
-                  .specialization || "",
-
-              profilePic:
-                latestCase.doctorId.profilePic ||
+                latestCase
+                  .doctorId
+                  .specialization ||
                 "",
 
-              isVerified: Boolean(
-                latestCase.doctorId.isVerified
-              ),
+              profilePic:
+                latestCase
+                  .doctorId
+                  .profilePic ||
+                "",
+
+              isVerified:
+                Boolean(
+                  latestCase
+                    .doctorId
+                    .isVerified
+                ),
             }
           : null;
 
-      return res.status(200).json({
-        childInfo: child,
+      return res
+        .status(200)
+        .json({
+          childInfo:
+            child,
 
-        caseData: {
-          _id: latestCase._id,
+          caseData: {
+            _id:
+              latestCase._id,
 
-          status: latestCase.status,
+            status:
+              latestCase.status,
 
-          priority: latestCase.priority,
+            priority:
+              latestCase.priority,
 
-          entriesCount:
-            latestCase.entriesCount ||
-            textEntries.length +
-              drawingEntries.length,
+            entriesCount:
+              latestCase.entriesCount ||
+              textEntries.length +
+                drawingEntries.length +
+                audioEntries.length,
 
-          lastAnalysisDate:
-            latestCase.lastAnalysisDate,
+            lastAnalysisDate:
+              latestCase
+                .lastAnalysisDate,
 
-          dominantEmotion:
-            latestCase.dominantEmotion,
+            dominantEmotion:
+              latestCase
+                .dominantEmotion,
 
-          emotionPercentage:
-            latestCase.emotionPercentage,
+            emotionPercentage:
+              latestCase
+                .emotionPercentage,
 
-          aiDiagnosis:
-            latestCase.aiDiagnosis || "",
+            aiDiagnosis:
+              latestCase
+                .aiDiagnosis ||
+              "",
 
-          aiSummary:
-            latestCase.aiSummary || "",
+            aiSummary:
+              latestCase
+                .aiSummary ||
+              "",
 
-          doctorRecommendation:
-            latestCase.doctorRecommendation ||
-            "",
+            doctorRecommendation:
+              latestCase
+                .doctorRecommendation ||
+              "",
 
-          emotionalTrend:
-            Array.isArray(
-              latestCase.emotionalTrend
-            )
-              ? latestCase.emotionalTrend
-              : [],
+            emotionalTrend:
+              Array.isArray(
+                latestCase
+                  .emotionalTrend
+              )
+                ? latestCase
+                    .emotionalTrend
+                : [],
 
-          frequentEmotions:
-            Array.isArray(
-              latestCase.frequentEmotions
-            )
-              ? latestCase.frequentEmotions
-              : [],
+            frequentEmotions:
+              Array.isArray(
+                latestCase
+                  .frequentEmotions
+              )
+                ? latestCase
+                    .frequentEmotions
+                : [],
 
-          recurringPatterns:
-            Array.isArray(
-              latestCase.recurringPatterns
-            )
-              ? latestCase.recurringPatterns
-              : [],
+            recurringPatterns:
+              Array.isArray(
+                latestCase
+                  .recurringPatterns
+              )
+                ? latestCase
+                    .recurringPatterns
+                : [],
 
-          doctorRecommendations:
-            Array.isArray(
-              latestCase.doctorRecommendations
-            )
-              ? latestCase.doctorRecommendations
-              : [],
+            doctorRecommendations:
+              Array.isArray(
+                latestCase
+                  .doctorRecommendations
+              )
+                ? latestCase
+                    .doctorRecommendations
+                : [],
 
-          analysisTimeline:
-            Array.isArray(
-              latestCase.analysisTimeline
-            )
-              ? latestCase.analysisTimeline
-              : [],
+            analysisTimeline:
+              Array.isArray(
+                latestCase
+                  .analysisTimeline
+              )
+                ? latestCase
+                    .analysisTimeline
+                : [],
 
-          doctor,
-        },
+            doctor,
+          },
 
-        recentEntries,
-      });
+          recentEntries,
+        });
     } catch (err) {
       console.error(
         "GET CHILD OVERVIEW ERROR:",
         err
       );
 
-      return res.status(500).json({
-        error:
-          "Failed to fetch child overview",
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to fetch child overview",
 
-        message:
-          err?.message ||
-          "Unexpected error while loading child overview",
-      });
+          message:
+            err?.message ||
+            "Unexpected error while loading child overview",
+        });
     }
   }
 );
@@ -352,265 +617,349 @@ router.get(
         req.params.childId
       );
 
-      const child = await Child.findOne({
-        _id: req.params.childId,
-        parentId: req.user._id,
-      }).lean();
+      const child =
+        await Child.findOne({
+          _id:
+            req.params.childId,
+
+          parentId:
+            req.user._id,
+        }).lean();
 
       if (!child) {
-        return res.status(404).json({
-          message: "Child not found",
-        });
+        return res
+          .status(404)
+          .json({
+            message:
+              "Child not found",
+          });
       }
 
-      const childCases = await Case.find({
-        childId: child._id,
-      })
-        .sort({
-          lastAnalysisDate: -1,
-          createdAt: -1,
+      const childCases =
+        await Case.find({
+          childId:
+            child._id,
         })
-        .lean();
+          .sort({
+            lastAnalysisDate:
+              -1,
+
+            createdAt:
+              -1,
+          })
+          .lean();
 
       const entries = [];
 
-      childCases.forEach((caseData) => {
-        const caseStatus =
-          typeof caseData.status === "string"
-            ? caseData.status
-            : "pending";
+      childCases.forEach(
+        (
+          caseData
+        ) => {
+          const caseStatus =
+            typeof caseData.status ===
+              "string"
+              ? caseData.status
+              : "pending";
 
-        const caseEmotion =
-          typeof caseData.dominantEmotion ===
-            "string" &&
-          caseData.dominantEmotion.trim()
-            ? caseData.dominantEmotion
-            : "Unknown";
+          const caseEmotion =
+            typeof caseData.dominantEmotion ===
+              "string" &&
+            caseData.dominantEmotion.trim()
+              ? caseData.dominantEmotion
+              : "Unknown";
 
-        const caseConfidence =
-          Number(caseData.emotionPercentage) ||
-          0;
+          const caseConfidence =
+            Number(
+              caseData.emotionPercentage
+            ) || 0;
 
-        const mainDoctorRecommendation =
-          typeof caseData.doctorRecommendation ===
-          "string"
-            ? caseData.doctorRecommendation.trim()
-            : "";
+          const mainDoctorRecommendation =
+            typeof caseData.doctorRecommendation ===
+              "string"
+              ? caseData.doctorRecommendation.trim()
+              : "";
 
-        const doctorRecommendations =
-          Array.isArray(
-            caseData.doctorRecommendations
-          )
-            ? caseData.doctorRecommendations
-            : [];
+          const doctorRecommendations =
+            Array.isArray(
+              caseData.doctorRecommendations
+            )
+              ? caseData.doctorRecommendations
+              : [];
 
-        const doctorResponseExists =
-          Boolean(mainDoctorRecommendation) ||
-          doctorRecommendations.length > 0;
+          const doctorResponseExists =
+            Boolean(
+              mainDoctorRecommendation
+            ) ||
+            doctorRecommendations.length >
+              0;
 
-        const fallbackDate =
-          caseData.lastAnalysisDate ||
-          caseData.createdAt ||
-          new Date();
+          const fallbackDate =
+            caseData.lastAnalysisDate ||
+            caseData.createdAt ||
+            new Date();
 
-        const textAnalyses =
-          Array.isArray(caseData.textAnalyses)
-            ? caseData.textAnalyses
-            : [];
+          const textAnalyses =
+            Array.isArray(
+              caseData.textAnalyses
+            )
+              ? caseData.textAnalyses
+              : [];
 
-        textAnalyses.forEach(
-          (entry, index) => {
-            const entryId =
-              entry?._id?.toString?.() ||
-              `text-${caseData._id}-${index}`;
+          textAnalyses.forEach(
+            (
+              entry,
+              index
+            ) => {
+              const entryId =
+                entry?._id?.toString?.() ||
+                `text-${caseData._id}-${index}`;
 
-            entries.push({
-              id: entryId,
+              entries.push({
+                id:
+                  entryId,
 
-              caseId:
-                caseData._id?.toString?.() ||
-                "",
+                caseId:
+                  caseData._id?.toString?.() ||
+                  "",
 
-              date:
-                entry?.createdAt ||
-                fallbackDate,
+                date:
+                  entry?.createdAt ||
+                  fallbackDate,
 
-              type: "Text Entry",
+                type:
+                  "Text Entry",
 
-              emotion:
-                typeof entry?.emotion ===
-                  "string" &&
-                entry.emotion.trim()
-                  ? entry.emotion
-                  : caseEmotion,
+                emotion:
+                  typeof entry?.emotion ===
+                    "string" &&
+                  entry.emotion.trim()
+                    ? entry.emotion
+                    : caseEmotion,
 
-              description:
-                (typeof entry?.analysisResult ===
-                  "string" &&
-                entry.analysisResult.trim()
-                  ? entry.analysisResult
-                  : "") ||
-                (typeof entry?.content ===
-                  "string" &&
-                entry.content.trim()
-                  ? entry.content
-                  : "") ||
-                "Text analysis entry",
+                description:
+                  (
+                    typeof entry?.analysisResult ===
+                      "string" &&
+                    entry.analysisResult.trim()
+                      ? entry.analysisResult
+                      : ""
+                  ) ||
+                  (
+                    typeof entry?.content ===
+                      "string" &&
+                    entry.content.trim()
+                      ? entry.content
+                      : ""
+                  ) ||
+                  "Text analysis entry",
 
-              status: caseStatus,
+                status:
+                  caseStatus,
 
-              confidence:
-                Number(entry?.confidence) ||
-                caseConfidence,
+                confidence:
+                  Number(
+                    entry?.confidence
+                  ) ||
+                  caseConfidence,
 
-              doctorResponseExists,
-            });
-          }
-        );
+                doctorResponseExists,
+              });
+            }
+          );
 
-        const drawings =
-          Array.isArray(caseData.drawings)
-            ? caseData.drawings
-            : [];
+          const drawings =
+            Array.isArray(
+              caseData.drawings
+            )
+              ? caseData.drawings
+              : [];
 
-        drawings.forEach(
-          (entry, index) => {
-            const entryId =
-              entry?._id?.toString?.() ||
-              `drawing-${caseData._id}-${index}`;
+          drawings.forEach(
+            (
+              entry,
+              index
+            ) => {
+              const entryId =
+                entry?._id?.toString?.() ||
+                `drawing-${caseData._id}-${index}`;
 
-            entries.push({
-              id: entryId,
+              entries.push({
+                id:
+                  entryId,
 
-              caseId:
-                caseData._id?.toString?.() ||
-                "",
+                caseId:
+                  caseData._id?.toString?.() ||
+                  "",
 
-              date:
-                entry?.createdAt ||
-                fallbackDate,
+                date:
+                  entry?.createdAt ||
+                  fallbackDate,
 
-              type: "Drawing Entry",
+                type:
+                  "Drawing Entry",
 
-              emotion:
-                typeof entry?.emotion ===
-                  "string" &&
-                entry.emotion.trim()
-                  ? entry.emotion
-                  : caseEmotion,
+                emotion:
+                  typeof entry?.emotion ===
+                    "string" &&
+                  entry.emotion.trim()
+                    ? entry.emotion
+                    : caseEmotion,
 
-              description:
-                typeof entry?.analysisResult ===
-                  "string" &&
-                entry.analysisResult.trim()
-                  ? entry.analysisResult
-                  : "Drawing analysis entry",
+                description:
+                  typeof entry?.analysisResult ===
+                    "string" &&
+                  entry.analysisResult.trim()
+                    ? entry.analysisResult
+                    : "Drawing analysis entry",
 
-              status: caseStatus,
+                status:
+                  caseStatus,
 
-              confidence:
-                Number(entry?.confidence) ||
-                caseConfidence,
+                confidence:
+                  Number(
+                    entry?.confidence
+                  ) ||
+                  caseConfidence,
 
-              doctorResponseExists,
+                doctorResponseExists,
 
-              imageUrl:
-                typeof entry?.imageUrl ===
-                "string"
-                  ? entry.imageUrl
-                  : "",
-            });
-          }
-        );
+                imageUrl:
+                  typeof entry?.imageUrl ===
+                    "string"
+                    ? entry.imageUrl
+                    : "",
+              });
+            }
+          );
 
-        const voiceAnalyses =
-          Array.isArray(caseData.voiceAnalyses)
-            ? caseData.voiceAnalyses
-            : [];
+          const audioAnalyses =
+            Array.isArray(
+              caseData.audioAnalyses
+            )
+              ? caseData.audioAnalyses
+              : [];
 
-        voiceAnalyses.forEach(
-          (entry, index) => {
-            const entryId =
-              entry?._id?.toString?.() ||
-              `voice-${caseData._id}-${index}`;
+          audioAnalyses.forEach(
+            (
+              entry,
+              index
+            ) => {
+              const entryId =
+                entry?._id?.toString?.() ||
+                `voice-${caseData._id}-${index}`;
 
-            entries.push({
-              id: entryId,
+              entries.push({
+                id:
+                  entryId,
 
-              caseId:
-                caseData._id?.toString?.() ||
-                "",
+                caseId:
+                  caseData._id?.toString?.() ||
+                  "",
 
-              date:
-                entry?.createdAt ||
-                fallbackDate,
+                date:
+                  entry?.createdAt ||
+                  fallbackDate,
 
-              type: "Voice Entry",
+                type:
+                  "Voice Entry",
 
-              emotion:
-                typeof entry?.emotion ===
-                  "string" &&
-                entry.emotion.trim()
-                  ? entry.emotion
-                  : caseEmotion,
+                emotion:
+                  typeof entry?.emotion ===
+                    "string" &&
+                  entry.emotion.trim()
+                    ? entry.emotion
+                    : caseEmotion,
 
-              description:
-                (typeof entry?.analysisResult ===
-                  "string" &&
-                entry.analysisResult.trim()
-                  ? entry.analysisResult
-                  : "") ||
-                (typeof entry?.transcribedText ===
-                  "string" &&
-                entry.transcribedText.trim()
-                  ? entry.transcribedText
-                  : "") ||
-                "Voice analysis entry",
+                description:
+                  (
+                    typeof entry?.analysisResult ===
+                      "string" &&
+                    entry.analysisResult.trim()
+                      ? entry.analysisResult
+                      : ""
+                  ) ||
+                  (
+                    typeof entry?.transcribedText ===
+                      "string" &&
+                    entry.transcribedText.trim()
+                      ? entry.transcribedText
+                      : ""
+                  ) ||
+                  "Voice analysis entry",
 
-              status: caseStatus,
+                status:
+                  caseStatus,
 
-              confidence:
-                Number(entry?.confidence) ||
-                caseConfidence,
+                confidence:
+                  Number(
+                    entry?.confidence
+                  ) ||
+                  caseConfidence,
 
-              doctorResponseExists,
-            });
-          }
-        );
-      });
+                doctorResponseExists,
+
+                audioUrl:
+                  typeof entry?.audioUrl ===
+                    "string"
+                    ? entry.audioUrl
+                    : "",
+              });
+            }
+          );
+        }
+      );
 
       entries.sort(
-        (firstEntry, secondEntry) => {
+        (
+          firstEntry,
+          secondEntry
+        ) => {
           const firstDate =
-            new Date(firstEntry.date).getTime() ||
+            new Date(
+              firstEntry.date
+            ).getTime() ||
             0;
 
           const secondDate =
             new Date(
               secondEntry.date
-            ).getTime() || 0;
+            ).getTime() ||
+            0;
 
-          return secondDate - firstDate;
+          return (
+            secondDate -
+            firstDate
+          );
         }
       );
 
       const pendingCount =
         entries.filter(
-          (entry) =>
-            entry.status === "pending"
+          (
+            entry
+          ) =>
+            entry.status ===
+            "pending"
         ).length;
 
       const reviewedCount =
         entries.filter(
-          (entry) =>
-            entry.status === "reviewed" ||
-            entry.status === "improving"
+          (
+            entry
+          ) =>
+            entry.status ===
+              "reviewed" ||
+            entry.status ===
+              "improving"
         ).length;
 
       const closedCount =
         entries.filter(
-          (entry) =>
-            entry.status === "closed"
+          (
+            entry
+          ) =>
+            entry.status ===
+            "closed"
         ).length;
 
       console.log(
@@ -618,38 +967,59 @@ router.get(
         entries.length
       );
 
-      return res.status(200).json({
-        childInfo: {
-          _id: child._id,
-          name: child.name,
-          age: child.age,
-          gender: child.gender,
-          notes: child.notes || "",
-        },
+      return res
+        .status(200)
+        .json({
+          childInfo: {
+            _id:
+              child._id,
 
-        counts: {
-          all: entries.length,
-          pending: pendingCount,
-          reviewed: reviewedCount,
-          closed: closedCount,
-        },
+            name:
+              child.name,
 
-        entries,
-      });
+            age:
+              child.age,
+
+            gender:
+              child.gender,
+
+            notes:
+              child.notes ||
+              "",
+          },
+
+          counts: {
+            all:
+              entries.length,
+
+            pending:
+              pendingCount,
+
+            reviewed:
+              reviewedCount,
+
+            closed:
+              closedCount,
+          },
+
+          entries,
+        });
     } catch (err) {
       console.error(
         "GET CHILD ENTRIES ERROR:",
         err
       );
 
-      return res.status(500).json({
-        error:
-          "Failed to fetch child entries",
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to fetch child entries",
 
-        message:
-          err?.message ||
-          "Unexpected error while loading child entries",
-      });
+          message:
+            err?.message ||
+            "Unexpected error while loading child entries",
+        });
     }
   }
 );
@@ -671,13 +1041,78 @@ router.post(
       } = req.body;
 
       const child =
-        await Child.findById(childId).populate('doctorId');
+        await Child.findOne({
+          _id:
+            childId,
+
+          parentId:
+            req.user._id,
+        });
 
       if (!child) {
-        return res.status(404).json({
-          error: "Child not found",
-        });
+        return res
+          .status(404)
+          .json({
+            error:
+              "Child not found",
+          });
       }
+
+      /*
+        لو الطفل عنده دكتور Approved بالفعل،
+        يتم الإبقاء على نفس الدكتور.
+      */
+      let assignedDoctor =
+        null;
+
+      if (child.doctorId) {
+        assignedDoctor =
+          await User.findOne({
+            _id:
+              child.doctorId,
+
+            role:
+              "doctor",
+
+            verificationStatus:
+              "approved",
+
+            isVerified:
+              true,
+          });
+      }
+
+      /*
+        لو الطفل قديم ومفيش له دكتور،
+        أو الدكتور لم يعد متاحًا،
+        يتم اختيار أقل دكتور في الحمل.
+      */
+      if (!assignedDoctor) {
+        assignedDoctor =
+          await findAvailableDoctor();
+
+        if (!assignedDoctor) {
+          return res
+            .status(409)
+            .json({
+              success:
+                false,
+
+              message:
+                "No approved doctor is currently available",
+            });
+        }
+
+        child.doctorId =
+          assignedDoctor._id;
+
+        await child.save();
+      }
+
+      console.log(
+        "ASSIGNED DOCTOR:",
+        assignedDoctor._id.toString()
+      );
 
       const audioFile =
         req.files?.audio?.[0];
@@ -746,59 +1181,92 @@ router.post(
             headers:
               formData.getHeaders(),
 
-            timeout: 30000,
+            timeout:
+              30000,
           }
         );
 
       const updatedCase =
         await updateCaseWithAIResults(
           childId,
-
-          child.doctorId?._id,
-
+          assignedDoctor._id,
           aiResponse.data
         );
 
-      await sendDoctorNotification({
-        doctorId:child.doctorId?._id|| child.doctorId,
+      console.log(
+        "CREATED OR UPDATED CASE:",
+        updatedCase._id.toString()
+      );
 
-        childId:childId,
+      console.log(
+        "CASE DOCTOR:",
+        updatedCase.doctorId.toString()
+      );
 
-        title:
-          "New Parent Follow-up",
+      const doctorNotification =
+        await sendDoctorNotification({
+          doctorId:
+            assignedDoctor._id,
 
-        message:
-          `Parent added new information about ${child.name}'s recent emotional behavior.`,
+          childId,
 
-        type:
-          "follow_up",
-      });
+          caseId:
+            updatedCase._id,
 
-      return res.status(200).json({
-        success: true,
+          title:
+            "New Parent Follow-up",
 
-        entry:
-          newEntry,
+          message:
+            `Parent added new information about ${child.name}'s recent emotional behavior.`,
 
-        aiResult:
-          aiResponse.data,
+          type:
+            "follow_up",
+        });
 
-        case:
-          updatedCase,
-      });
+      console.log(
+        "CREATED NOTIFICATION:",
+        doctorNotification?._id?.toString()
+      );
+
+      return res
+        .status(200)
+        .json({
+          success:
+            true,
+
+          entry:
+            newEntry,
+
+          aiResult:
+            aiResponse.data,
+
+          case:
+            updatedCase,
+
+          assignedDoctor: {
+            _id:
+              assignedDoctor._id,
+
+            fullName:
+              assignedDoctor.fullName ||
+              "",
+          },
+        });
     } catch (err) {
       console.error(
         "Error in add-entry integration:",
         err
       );
 
-      return res.status(500).json({
-        error:
-          "Failed to process entry and analyze with AI",
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to process entry and analyze with AI",
 
-        message:
-          err?.message,
-      });
+          message:
+            err?.message,
+        });
     }
   }
 );
@@ -813,18 +1281,38 @@ router.get(
   checkToken,
   async (req, res) => {
     try {
+      const child =
+        await Child.findOne({
+          _id:
+            req.params.childId,
+
+          parentId:
+            req.user._id,
+        }).lean();
+
+      if (!child) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Child not found",
+          });
+      }
+
       const caseData =
         await Case.findOne({
           childId:
-            req.params.childId,
+            child._id,
         });
 
       if (!caseData) {
-        return res.status(200).json({
-          entries: 0,
-          reviewed: 0,
-          insights: 0,
-        });
+        return res
+          .status(200)
+          .json({
+            entries: 0,
+            reviewed: 0,
+            insights: 0,
+          });
       }
 
       const analysisTimeline =
@@ -843,11 +1331,14 @@ router.get(
 
       const stats = {
         entries:
-          caseData.entriesCount || 0,
+          caseData.entriesCount ||
+          0,
 
         reviewed:
           analysisTimeline.filter(
-            (item) =>
+            (
+              item
+            ) =>
               item.diagnosis !==
               "تحت المتابعة"
           ).length,
@@ -865,13 +1356,15 @@ router.get(
         err
       );
 
-      return res.status(500).json({
-        error:
-          "Failed to fetch stats",
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to fetch stats",
 
-        message:
-          err?.message,
-      });
+          message:
+            err?.message,
+        });
     }
   }
 );
@@ -886,19 +1379,37 @@ router.get(
   checkToken,
   async (req, res) => {
     try {
+      const child =
+        await Child.findOne({
+          _id:
+            req.params.childId,
+
+          parentId:
+            req.user._id,
+        }).lean();
+
+      if (!child) {
+        return res
+          .status(404)
+          .json({
+            msg:
+              "Child not found",
+          });
+      }
+
       const caseData =
         await Case.findOne({
           childId:
-            req.params.childId,
-        }).populate(
-          "doctorRecommendations"
-        );
+            child._id,
+        });
 
       if (!caseData) {
-        return res.status(404).json({
-          msg:
-            "No progress data yet",
-        });
+        return res
+          .status(404)
+          .json({
+            msg:
+              "No progress data yet",
+          });
       }
 
       const analysisTimeline =
@@ -922,57 +1433,63 @@ router.get(
           ? caseData.doctorRecommendations
           : [];
 
-      return res.status(200).json({
-        summary:
-          caseData.aiSummary,
+      return res
+        .status(200)
+        .json({
+          summary:
+            caseData.aiSummary,
 
-        stats: {
-          entries:
-            caseData.entriesCount ||
-            0,
+          stats: {
+            entries:
+              caseData.entriesCount ||
+              0,
 
-          reviewed:
-            analysisTimeline.filter(
-              (item) =>
-                item.status ===
-                "reviewed"
-            ).length,
+            reviewed:
+              analysisTimeline.filter(
+                (
+                  item
+                ) =>
+                  item.status ===
+                  "reviewed"
+              ).length,
 
-          insights:
-            textAnalyses.length,
-        },
+            insights:
+              textAnalyses.length,
+          },
 
-        trends:
-          Array.isArray(
-            caseData.emotionalTrend
-          )
-            ? caseData.emotionalTrend
-            : [],
+          trends:
+            Array.isArray(
+              caseData.emotionalTrend
+            )
+              ? caseData.emotionalTrend
+              : [],
 
-        patterns:
-          Array.isArray(
-            caseData.recurringPatterns
-          )
-            ? caseData.recurringPatterns
-            : [],
+          patterns:
+            Array.isArray(
+              caseData.recurringPatterns
+            )
+              ? caseData.recurringPatterns
+              : [],
 
-        latestDoctorInsight:
-          doctorRecommendations[0] ||
-          null,
-      });
+          latestDoctorInsight:
+            doctorRecommendations[0] ||
+            null,
+        });
     } catch (err) {
       console.error(
         "GET CHILD PROGRESS ERROR:",
         err
       );
 
-      return res.status(500).json({
-        error:
-          "Failed to fetch progress",
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to fetch progress",
 
-        message:
-          err?.message,
-      });
+          message:
+            err?.message,
+        });
     }
   }
 );
@@ -987,12 +1504,34 @@ router.get(
   checkToken,
   async (req, res) => {
     try {
+      const child =
+        await Child.findOne({
+          _id:
+            req.params.childId,
+
+          parentId:
+            req.user._id,
+        }).lean();
+
+      if (!child) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Child not found",
+          });
+      }
+
       const entries =
         await Entry.find({
           childId:
-            req.params.childId,
+            child._id,
+
+          parentId:
+            req.user._id,
         }).sort({
-          createdAt: -1,
+          createdAt:
+            -1,
         });
 
       return res
@@ -1004,13 +1543,15 @@ router.get(
         err
       );
 
-      return res.status(500).json({
-        error:
-          "Failed to fetch timeline",
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to fetch timeline",
 
-        message:
-          err?.message,
-      });
+          message:
+            err?.message,
+        });
     }
   }
 );
@@ -1025,39 +1566,63 @@ router.get(
   checkToken,
   async (req, res) => {
     try {
+      const child =
+        await Child.findOne({
+          _id:
+            req.params.childId,
+
+          parentId:
+            req.user._id,
+        }).lean();
+
+      if (!child) {
+        return res
+          .status(404)
+          .json({
+            error:
+              "Child not found",
+          });
+      }
+
       const caseData =
         await Case.findOne({
           childId:
-            req.params.childId,
+            child._id,
         });
 
       if (!caseData) {
-        return res.status(404).json({
-          error:
-            "No data found",
-        });
+        return res
+          .status(404)
+          .json({
+            error:
+              "No data found",
+          });
       }
 
-      return res.status(200).json(
-        Array.isArray(
-          caseData.doctorRecommendations
-        )
-          ? caseData.doctorRecommendations
-          : []
-      );
+      return res
+        .status(200)
+        .json(
+          Array.isArray(
+            caseData.doctorRecommendations
+          )
+            ? caseData.doctorRecommendations
+            : []
+        );
     } catch (err) {
       console.error(
         "GET RECOMMENDATIONS ERROR:",
         err
       );
 
-      return res.status(500).json({
-        error:
-          "Server error",
+      return res
+        .status(500)
+        .json({
+          error:
+            "Server error",
 
-        message:
-          err?.message,
-      });
+          message:
+            err?.message,
+        });
     }
   }
 );
@@ -1077,25 +1642,30 @@ router.get(
           userId:
             req.user._id,
         }).sort({
-          createdAt: -1,
+          createdAt:
+            -1,
         });
 
       return res
         .status(200)
-        .json(notifications);
+        .json(
+          notifications
+        );
     } catch (err) {
       console.error(
         "GET NOTIFICATIONS ERROR:",
         err
       );
 
-      return res.status(500).json({
-        error:
-          "Failed to fetch notifications",
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to fetch notifications",
 
-        message:
-          err?.message,
-      });
+          message:
+            err?.message,
+        });
     }
   }
 );
@@ -1111,44 +1681,541 @@ router.patch(
   async (req, res) => {
     try {
       const notification =
-        await Notification.findByIdAndUpdate(
-          req.params.notificationId,
-
+        await Notification.findOneAndUpdate(
           {
-            isRead: true,
+            _id:
+              req.params
+                .notificationId,
+
+            userId:
+              req.user._id,
           },
 
           {
-            new: true,
+            isRead:
+              true,
+          },
+
+          {
+            new:
+              true,
           }
         );
 
       if (!notification) {
-        return res.status(404).json({
-          error:
-            "Notification not found",
-        });
+        return res
+          .status(404)
+          .json({
+            error:
+              "Notification not found",
+          });
       }
 
-      return res.status(200).json({
-        msg:
-          "Notification marked as read",
+      return res
+        .status(200)
+        .json({
+          msg:
+            "Notification marked as read",
 
-        notification,
-      });
+          notification,
+        });
     } catch (err) {
       console.error(
         "READ NOTIFICATION ERROR:",
         err
       );
 
-      return res.status(500).json({
-        error:
-          "Failed to update notification",
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to update notification",
 
-        message:
-          err?.message,
-      });
+          message:
+            err?.message,
+        });
+    }
+  }
+);
+
+/* =========================
+   Get Specific Case Details
+   GET /api/children/case/:caseId/details
+   Optional query: ?entryId=...
+========================= */
+
+router.get(
+  "/case/:caseId/details",
+  checkToken,
+  async (req, res) => {
+    try {
+      const caseData =
+        await Case.findById(
+          req.params.caseId
+        )
+          .populate(
+            "doctorId",
+            "fullName name specialization professionalType profilePic isVerified"
+          )
+          .lean();
+
+      if (!caseData) {
+        return res
+          .status(404)
+          .json({
+            message:
+              "Case not found",
+          });
+      }
+
+      const child =
+        await Child.findOne({
+          _id:
+            caseData.childId,
+
+          parentId:
+            req.user._id,
+        }).lean();
+
+      if (!child) {
+        return res
+          .status(404)
+          .json({
+            message:
+              "Case not found for this parent",
+          });
+      }
+
+      const caseId =
+        caseData._id?.toString?.() ||
+        "";
+
+      const fallbackDate =
+        caseData.lastAnalysisDate ||
+        caseData.createdAt ||
+        new Date();
+
+      const dominantEmotion =
+        typeof caseData.dominantEmotion ===
+          "string" &&
+        caseData.dominantEmotion.trim()
+          ? caseData.dominantEmotion
+          : "Unknown";
+
+      const confidence =
+        Number(
+          caseData.emotionPercentage
+        ) || 0;
+
+      const textEntries = (
+        Array.isArray(
+          caseData.textAnalyses
+        )
+          ? caseData.textAnalyses
+          : []
+      ).map(
+        (
+          entry,
+          index
+        ) => ({
+          id:
+            entry?._id?.toString?.() ||
+            `text-${caseId}-${index}`,
+
+          caseId,
+
+          type:
+            "Text Entry",
+
+          date:
+            entry?.createdAt ||
+            fallbackDate,
+
+          content:
+            typeof entry?.content ===
+              "string"
+              ? entry.content
+              : "",
+
+          analysisResult:
+            typeof entry?.analysisResult ===
+              "string"
+              ? entry.analysisResult
+              : "",
+
+          description:
+            (
+              typeof entry?.analysisResult ===
+                "string" &&
+              entry.analysisResult.trim()
+                ? entry.analysisResult
+                : ""
+            ) ||
+            (
+              typeof entry?.content ===
+                "string" &&
+              entry.content.trim()
+                ? entry.content
+                : ""
+            ) ||
+            "Text analysis entry",
+
+          emotion:
+            typeof entry?.emotion ===
+              "string" &&
+            entry.emotion.trim()
+              ? entry.emotion
+              : dominantEmotion,
+
+          confidence:
+            Number(
+              entry?.confidence
+            ) ||
+            confidence,
+        })
+      );
+
+      const drawingEntries = (
+        Array.isArray(
+          caseData.drawings
+        )
+          ? caseData.drawings
+          : []
+      ).map(
+        (
+          entry,
+          index
+        ) => ({
+          id:
+            entry?._id?.toString?.() ||
+            `drawing-${caseId}-${index}`,
+
+          caseId,
+
+          type:
+            "Drawing Entry",
+
+          date:
+            entry?.createdAt ||
+            fallbackDate,
+
+          content:
+            "",
+
+          analysisResult:
+            typeof entry?.analysisResult ===
+              "string"
+              ? entry.analysisResult
+              : "",
+
+          description:
+            typeof entry?.analysisResult ===
+              "string" &&
+            entry.analysisResult.trim()
+              ? entry.analysisResult
+              : "Drawing analysis entry",
+
+          emotion:
+            typeof entry?.emotion ===
+              "string" &&
+            entry.emotion.trim()
+              ? entry.emotion
+              : dominantEmotion,
+
+          confidence:
+            Number(
+              entry?.confidence
+            ) ||
+            confidence,
+
+          imageUrl:
+            typeof entry?.imageUrl ===
+              "string"
+              ? entry.imageUrl
+              : "",
+        })
+      );
+
+      const audioEntries = (
+        Array.isArray(
+          caseData.audioAnalyses
+        )
+          ? caseData.audioAnalyses
+          : []
+      ).map(
+        (
+          entry,
+          index
+        ) => ({
+          id:
+            entry?._id?.toString?.() ||
+            `audio-${caseId}-${index}`,
+
+          caseId,
+
+          type:
+            "Voice Entry",
+
+          date:
+            entry?.createdAt ||
+            fallbackDate,
+
+          content:
+            "",
+
+          analysisResult:
+            typeof entry?.analysisResult ===
+              "string"
+              ? entry.analysisResult
+              : "",
+
+          description:
+            (
+              typeof entry?.analysisResult ===
+                "string" &&
+              entry.analysisResult.trim()
+                ? entry.analysisResult
+                : ""
+            ) ||
+            "Voice analysis entry",
+
+          emotion:
+            typeof entry?.emotion ===
+              "string" &&
+            entry.emotion.trim()
+              ? entry.emotion
+              : dominantEmotion,
+
+          confidence:
+            Number(
+              entry?.confidence
+            ) ||
+            confidence,
+
+          audioUrl:
+            typeof entry?.audioUrl ===
+              "string"
+              ? entry.audioUrl
+              : "",
+        })
+      );
+
+      const entries = [
+        ...textEntries,
+        ...drawingEntries,
+        ...audioEntries,
+      ].sort(
+        (
+          firstEntry,
+          secondEntry
+        ) => {
+          const firstDate =
+            new Date(
+              firstEntry.date
+            ).getTime() ||
+            0;
+
+          const secondDate =
+            new Date(
+              secondEntry.date
+            ).getTime() ||
+            0;
+
+          return (
+            secondDate -
+            firstDate
+          );
+        }
+      );
+
+      const requestedEntryId =
+        typeof req.query.entryId ===
+          "string"
+          ? req.query.entryId
+          : "";
+
+      const selectedEntry =
+        (
+          requestedEntryId
+            ? entries.find(
+                (
+                  entry
+                ) =>
+                  entry.id ===
+                  requestedEntryId
+              )
+            : null
+        ) ||
+        entries[0] ||
+        null;
+
+      const doctor =
+        caseData.doctorId &&
+        typeof caseData.doctorId ===
+          "object"
+          ? {
+              _id:
+                caseData
+                  .doctorId._id,
+
+              fullName:
+                caseData
+                  .doctorId
+                  .fullName ||
+                caseData
+                  .doctorId
+                  .name ||
+                "Specialist",
+
+              specialization:
+                caseData
+                  .doctorId
+                  .specialization ||
+                caseData
+                  .doctorId
+                  .professionalType ||
+                "",
+
+              profilePic:
+                caseData
+                  .doctorId
+                  .profilePic ||
+                "",
+
+              isVerified:
+                Boolean(
+                  caseData
+                    .doctorId
+                    .isVerified
+                ),
+            }
+          : null;
+
+      return res
+        .status(200)
+        .json({
+          childInfo: {
+            _id:
+              child._id,
+
+            name:
+              child.name,
+
+            age:
+              child.age,
+
+            gender:
+              child.gender,
+
+            notes:
+              child.notes ||
+              "",
+          },
+
+          caseData: {
+            _id:
+              caseData._id,
+
+            status:
+              caseData.status ||
+              "pending",
+
+            priority:
+              caseData.priority ||
+              "Low",
+
+            childProgress:
+              caseData.childProgress ||
+              "no enough data yet",
+
+            entriesCount:
+              Number(
+                caseData.entriesCount
+              ) ||
+              entries.length,
+
+            createdAt:
+              caseData.createdAt,
+
+            lastAnalysisDate:
+              caseData.lastAnalysisDate ||
+              caseData.createdAt,
+
+            dominantEmotion,
+
+            emotionPercentage:
+              confidence,
+
+            aiDiagnosis:
+              caseData.aiDiagnosis ||
+              "",
+
+            aiSummary:
+              caseData.aiSummary ||
+              "",
+
+            doctorRecommendation:
+              caseData.doctorRecommendation ||
+              "",
+
+            doctorRecommendations:
+              Array.isArray(
+                caseData.doctorRecommendations
+              )
+                ? caseData.doctorRecommendations
+                : [],
+
+            emotionalTrend:
+              Array.isArray(
+                caseData.emotionalTrend
+              )
+                ? caseData.emotionalTrend
+                : [],
+
+            frequentEmotions:
+              Array.isArray(
+                caseData.frequentEmotions
+              )
+                ? caseData.frequentEmotions
+                : [],
+
+            recurringPatterns:
+              Array.isArray(
+                caseData.recurringPatterns
+              )
+                ? caseData.recurringPatterns
+                : [],
+
+            analysisTimeline:
+              Array.isArray(
+                caseData.analysisTimeline
+              )
+                ? caseData.analysisTimeline
+                : [],
+
+            doctor,
+          },
+
+          selectedEntry,
+
+          entries,
+        });
+    } catch (err) {
+      console.error(
+        "GET CASE DETAILS ERROR:",
+        err
+      );
+
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to fetch case details",
+
+          message:
+            err?.message ||
+            "Unexpected error while loading case details",
+        });
     }
   }
 );
@@ -1170,11 +2237,26 @@ router.post(
         notes,
       } = req.body;
 
+      const assignedDoctor =
+        await findAvailableDoctor();
+
+      if (!assignedDoctor) {
+        return res
+          .status(409)
+          .json({
+            success:
+              false,
+
+            message:
+              "No approved doctor is currently available",
+          });
+      }
+
       const newChild =
         new Child({
           name:
             typeof name ===
-            "string"
+              "string"
               ? name.trim()
               : name,
 
@@ -1183,7 +2265,7 @@ router.post(
 
           gender:
             typeof gender ===
-            "string"
+              "string"
               ? gender
                   .toLowerCase()
                   .trim()
@@ -1191,33 +2273,54 @@ router.post(
 
           notes:
             typeof notes ===
-            "string"
+              "string"
               ? notes.trim()
               : "",
 
           parentId:
             req.user._id,
+
+          doctorId:
+            assignedDoctor._id,
         });
 
       await newChild.save();
 
-      return res.status(201).json({
-        message:
-          "Child added successfully",
+      console.log(
+        "NEW CHILD ASSIGNED DOCTOR:",
+        assignedDoctor._id.toString()
+      );
 
-        child:
-          newChild,
-      });
+      return res
+        .status(201)
+        .json({
+          message:
+            "Child added successfully",
+
+          child:
+            newChild,
+
+          assignedDoctor: {
+            _id:
+              assignedDoctor._id,
+
+            fullName:
+              assignedDoctor.fullName ||
+              "",
+          },
+        });
     } catch (err) {
       console.error(
         "ADD CHILD ERROR:",
         err
       );
 
-      return res.status(500).json({
-        error:
-          err.message,
-      });
+      return res
+        .status(500)
+        .json({
+          error:
+            err.message,
+        });
     }
   }
 );
@@ -1242,10 +2345,12 @@ router.get(
         });
 
       if (!child) {
-        return res.status(404).json({
-          msg:
-            "Child not found",
-        });
+        return res
+          .status(404)
+          .json({
+            msg:
+              "Child not found",
+          });
       }
 
       return res
@@ -1257,13 +2362,15 @@ router.get(
         err
       );
 
-      return res.status(500).json({
-        error:
-          "Failed to fetch child details",
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to fetch child details",
 
-        message:
-          err?.message,
-      });
+          message:
+            err?.message,
+        });
     }
   }
 );
@@ -1288,29 +2395,50 @@ router.delete(
         });
 
       if (!child) {
-        return res.status(404).json({
-          msg:
-            "Child not found",
-        });
+        return res
+          .status(404)
+          .json({
+            msg:
+              "Child not found",
+          });
       }
 
-      return res.status(200).json({
-        msg:
-          "Child and all their data deleted successfully",
-      });
+      await Promise.all([
+        Case.deleteMany({
+          childId:
+            child._id,
+        }),
+
+        Entry.deleteMany({
+          childId:
+            child._id,
+
+          parentId:
+            req.user._id,
+        }),
+      ]);
+
+      return res
+        .status(200)
+        .json({
+          msg:
+            "Child and all their data deleted successfully",
+        });
     } catch (err) {
       console.error(
         "DELETE CHILD ERROR:",
         err
       );
 
-      return res.status(500).json({
-        error:
-          "Failed to delete child",
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to delete child",
 
-        message:
-          err?.message,
-      });
+          message:
+            err?.message,
+        });
     }
   }
 );
@@ -1332,6 +2460,64 @@ router.put(
         notes,
       } = req.body;
 
+      const updates = {};
+
+      if (
+        name !==
+        undefined
+      ) {
+        updates.name =
+          typeof name ===
+            "string"
+            ? name.trim()
+            : name;
+      }
+
+      if (
+        age !==
+        undefined
+      ) {
+        updates.age =
+          Number(age);
+      }
+
+      if (
+        gender !==
+        undefined
+      ) {
+        updates.gender =
+          typeof gender ===
+            "string"
+            ? gender
+                .toLowerCase()
+                .trim()
+            : gender;
+      }
+
+      if (
+        notes !==
+        undefined
+      ) {
+        updates.notes =
+          typeof notes ===
+            "string"
+            ? notes.trim()
+            : "";
+      }
+
+      if (
+        Object.keys(
+          updates
+        ).length === 0
+      ) {
+        return res
+          .status(400)
+          .json({
+            msg:
+              "No child changes were provided",
+          });
+      }
+
       const updatedChild =
         await Child.findOneAndUpdate(
           {
@@ -1343,66 +2529,53 @@ router.put(
           },
 
           {
-            $set: {
-              name:
-                typeof name ===
-                "string"
-                  ? name.trim()
-                  : name,
-
-              age:
-                Number(age),
-
-              gender:
-                typeof gender ===
-                "string"
-                  ? gender
-                      .toLowerCase()
-                      .trim()
-                  : gender,
-
-              notes:
-                typeof notes ===
-                "string"
-                  ? notes.trim()
-                  : "",
-            },
+            $set:
+              updates,
           },
 
           {
-            new: true,
-            runValidators: true,
+            new:
+              true,
+
+            runValidators:
+              true,
           }
         );
 
       if (!updatedChild) {
-        return res.status(404).json({
-          msg:
-            "Child not found",
-        });
+        return res
+          .status(404)
+          .json({
+            msg:
+              "Child not found",
+          });
       }
 
-      return res.status(200).json({
-        msg:
-          "Child updated successfully",
+      return res
+        .status(200)
+        .json({
+          msg:
+            "Child updated successfully",
 
-        child:
-          updatedChild,
-      });
+          child:
+            updatedChild,
+        });
     } catch (err) {
       console.error(
         "UPDATE CHILD ERROR:",
         err
       );
 
-      return res.status(500).json({
-        error:
-          "Failed to update child",
+      return res
+        .status(500)
+        .json({
+          error:
+            "Failed to update child",
 
-        message:
-          err?.message ||
-          "Unexpected error while updating child",
-      });
+          message:
+            err?.message ||
+            "Unexpected error while updating child",
+        });
     }
   }
 );
