@@ -691,6 +691,8 @@ router.put(
 
             type:
               "doctor_review",
+
+              data: { recommendation: doctorRecommendation }
           });
 
           notificationSent = true;
@@ -1215,6 +1217,8 @@ router.get(
             createdAt: -1,
           })
           .lean();
+
+          
 
       return res
         .status(200)

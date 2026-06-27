@@ -671,7 +671,7 @@ router.post(
       } = req.body;
 
       const child =
-        await Child.findById(childId);
+        await Child.findById(childId).populate('doctorId');
 
       if (!child) {
         return res.status(404).json({
@@ -754,22 +754,21 @@ router.post(
         await updateCaseWithAIResults(
           childId,
 
-          child.doctorId,
+          child.doctorId?._id,
 
           aiResponse.data
         );
 
       await sendDoctorNotification({
-        doctorId:
-          child.doctorId,
+        doctorId:child.doctorId?._id|| child.doctorId,
 
-        childId,
+        childId:childId,
 
         title:
           "New Parent Follow-up",
 
         message:
-          `Parent added new information about ${childId}'s recent emotional behavior.`,
+          `Parent added new information about ${child.name}'s recent emotional behavior.`,
 
         type:
           "follow_up",
