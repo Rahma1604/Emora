@@ -42,10 +42,13 @@ def predict_emotion_from_text(text: str):
 
     danger_words = ["بيضربني", "بيضربونا", "يضربني", "ضربني", "بيضرب", "علقة", "بيضربوني"]
     if any(dw in cleaned for dw in danger_words):
-        return "sad", 99.0
+        return "sad", 91.0
 
     if "مش مبسوط" in cleaned or "مش فرحان" in cleaned or "مش سعيد" in cleaned or "مش متفائل" in cleaned:
         return "sad", 85.0
+
+    if "تروما" in cleaned or "trauma" in cleaned:
+        return "fear", 80.0
 
     inputs = tokenizer(
         cleaned,

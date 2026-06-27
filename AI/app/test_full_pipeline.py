@@ -23,8 +23,8 @@ def _ensure_whisper():
     if not _whisper_ready:
        # print("⏳ جاري تحميل Whisper (أول مرة بس)...")
         import AI.voice_modality.services.speech_to_text
-       # _whisper_ready = True
-        print("✅ Whisper جاهز!")
+        _whisper_ready = True
+       # print("✅ Whisper جاهز!")
 
 SEP  = "─" * 58
 SEP2 = "═" * 58
@@ -34,7 +34,7 @@ SEP2 = "═" * 58
 def handle_text() -> tuple[str, str]:
     text = input("  ✏️  اكتب يومك النهاردة مشي ازاي علشان نحلله سوا: ").strip()
     if not text:
-        return "neutral", ""
+        return "unknown", ""
     emotion, conf = predict_emotion_from_text(text)
     print(f"  🧠 NLP  →  {emotion}  ({conf:.1f}%)")
     return emotion, text
@@ -157,15 +157,15 @@ def main():
         print("  [3] صوت (voice)")
         print("  [4] نص + صورة")
 
-        choice = input("\n  اختاري رقم: ").strip()
+        choice = input("\n  اختار رقم: ").strip()
 
         if   choice == "1": emotion, text = handle_text()
         elif choice == "2": emotion, text = handle_image()
         elif choice == "3": emotion, text = handle_voice()
         elif choice == "4": emotion, text = handle_text_and_image()
         else:
-            print("  ⚠️  اختيار غير صحيح — هيسجل unknown")
-            emotion, text = "unknown", ""
+            print("⚠️ اختيار غير صحيح")
+            continue
 
         data      = _get_child(child_id)
         fake_date = f"2026-06-{day:02d}"
