@@ -43,7 +43,7 @@ const doctorChatRoutes = require("./routes/doctorChatRoutes");
 const doctorRoutes = require("./routes/doctorRoutes");
 const aiRoutes = require("./routes/aiRoutes");
 const adminRoutes = require("./routes/adminRoutes");
-
+const reportRoutes = require("./routes/reportRoutes");
 /* =========================
    Middlewares
 ========================= */
@@ -100,7 +100,7 @@ app.use("/api/doctor-chat", doctorChatRoutes);
 app.use("/api/doctor", doctorRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/admin", adminRoutes);
-
+app.use("/api/reports", reportRoutes);
 /* =========================
    Route Not Found
 ========================= */
